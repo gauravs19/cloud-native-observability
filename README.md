@@ -47,6 +47,10 @@ it matters, and the recommended alert with its rationale).
 
 (Full link list at the end of `CATALOG.md`.)
 
+## License
+
+Released under the [MIT License](./LICENSE) — free to use, adapt, and share with attribution.
+
 ---
 
 *Generic, vendor-neutral reference. Tune all thresholds to your SLOs.*
