@@ -17,7 +17,7 @@ See [Methods & their theory](#methods--their-theory) for what each means.
 - [Methods & their theory](#methods--their-theory)
 - [Glossary & abbreviations](#glossary--abbreviations)
 - [Part A — The signal types](#part-a--the-signal-types)
-- [Part B — Metrics by layer](#part-b--metrics-by-layer) — 01 Frontend · 02 API Gateway · 03 Service · 04 Mesh · 05 Network · 06 Load Balancer · 07 DNS/TLS · 08 CDN · 09 DB-Relational · 10 DB-NoSQL · 11 Cache · 12 Messaging · 13 Storage · 14 Host · 15 Container · 16 Kubernetes · 17 Serverless · 18 Batch
+- [Part B — Metrics by layer](#part-b--metrics-by-layer) — 01 Frontend · 02 API Gateway · 03 Service · 04 Mesh · 04a Tracing/APM · 05 Network · 06 Load Balancer · 07 DNS/TLS · 08 CDN · 09 DB-Relational · 10 DB-NoSQL · 11 Cache · 12 Messaging · 13 Storage · 14 Host · 15 Container · 16 Kubernetes · 17 Serverless · 18 Batch
 - [Part B′ — Protocol & workload layers](#part-b--protocol--workload-specific-layers) — 26 gRPC · 27 GraphQL · 28 Real-time · 29 Search · 30 Vector DB · 31 Mobile · 32 Notifications · 33 Third-party
 - [Part C — Cross-cutting dimensions](#part-c--cross-cutting-dimensions) — 19 Security · 20 Cost · 21 Business · 22 Data quality · 23 AI/ML · 24 DORA · 25 Backup/DR
 - [Part C′ — Operational dimensions](#part-c--operational-dimensions) — 34 Alerting health · 35 Capacity · 36 Multi-tenancy · 37 Quotas · 38 Compliance · 39 Telemetry pipeline · 40 Sustainability
@@ -221,6 +221,25 @@ Four complementary mental models tell you *what* to measure; each was invented t
 | `outlier_ejections` | GOLD · 🟠 | Hosts ejected by outlier detection for misbehaving. Ticket on churn — indicates unhealthy backends being removed and re-added repeatedly. |
 | `sidecar_cpu` / `memory` | USE · 🟢 | Proxy resource overhead. Watch — a starved sidecar distorts the very latency numbers you rely on it to report. |
 | `pending_requests` (per cluster) | USE · 🟠 | Requests queued on a connection pool. Ticket — connection-pool circuit-breaker pressure that precedes request failures. |
+
+### 04a · Distributed Tracing & APM-derived Signals
+**Context.** APM platforms — **Apache SkyWalking**, Jaeger, Grafana Tempo, Zipkin, and commercial Dynatrace / New Relic / Datadog / Elastic APM — don't just store traces; they *compute* most of §01–§04 (service/endpoint RED, the dependency map, instance/JVM stats) **from** the trace stream, and link metrics to traces via **exemplars**. These are the signals that come out of that trace pipeline itself — what those tools are measuring under the hood.
+
+| Metric | Tags | Detailed description |
+|--------|------|----------------------|
+| `trace_error_rate` (span/trace) | RED · 🔴 | Share of traces/spans flagged error for a service. Page on SLO burn — trace-derived errors catch failures deep in a call chain that an edge 5xx count misses. |
+| `service_sla` / `success_rate` | GOLD · 🔴 | Per-service success ratio (SkyWalking calls this "SLA"), computed from traces. Page on SLO burn — the service-level equivalent of `error_rate`. |
+| `service_apdex` | GOLD · 🟠 | Satisfied/tolerating/frustrated ratio *per service* (not just frontend). Ticket on sustained drop — APM tools surface this as the headline per-service health score. |
+| `slow_trace_count` | RED · 🟠 | Traces exceeding a latency threshold. Ticket — the entry point for "which requests are slow and where," APM's core diagnostic workflow. |
+| `dependency_edge_error_rate` / `_latency` | RED · 🟠 | Error/latency per service-to-service *edge* in the topology graph. Ticket — pinpoints which link in the dependency map is failing or slow. |
+| `topology_unhealthy_edges` | GOLD · 🟠 | Count of dependency-graph edges breaching their SLO. Ticket — the roll-up behind the service map's red links. |
+| `trace_sampling_rate` | — · 🟢 | Fraction of requests sampled into traces. Watch — too low loses rare-error visibility, too high blows up cost/cardinality; alert if it falls to ~0 (tracing effectively blind). |
+| `dropped_spans` | GOLD · 🟠 | Spans discarded by the collector/agent under load. Ticket — silent gaps that make root-cause analysis unreliable. |
+| `exemplar_coverage` | — · 🟢 | Share of latency/error metrics carrying a trace exemplar. Watch — exemplars are what let you jump from a metric spike straight to a representative trace; low coverage breaks that workflow. |
+| `instance_jvm_*` (heap, gc, threads, classes) | USE · 🟠 | Per-instance/process runtime stats APM attaches to each service instance. Ticket on heap >85% or GC p99 > budget (generic view in §03). |
+| `profile_on_cpu` / `alloc` / `lock` | USE · 🟢 | Continuous-profiling flame data (SkyWalking in-process & eBPF profiling). Watch — turns "service X is slow" into "function Y is the cost," used on-demand during diagnosis. |
+
+> **Tools that produce these:** Apache SkyWalking · Jaeger · Grafana Tempo · Zipkin · OpenTelemetry Collector (+ any backend); commercial: Dynatrace, New Relic, Datadog APM, Elastic APM, Honeycomb. Most auto-compute §01–§04 from instrumented traces — so this catalog is the vendor-neutral view of *what they measure*.
 
 ### 05 · Network (L3/L4 + L7)
 **Context.** Below the application, **USE** applies per interface: utilization (throughput vs link), saturation (queues, retransmits), errors (drops). Network faults masquerade as application slowness, so these are the prime suspects in "it's slow but nothing looks wrong."
@@ -903,6 +922,13 @@ Define **alerts, dashboards, and SLOs in version control** (Terraform / Bicep / 
 - **Prometheus — naming & alerting**: <https://prometheus.io/docs/practices/naming/> · <https://prometheus.io/docs/practices/alerting/>
 - **AWS Well-Architected — Observability**: <https://docs.aws.amazon.com/wellarchitected/latest/operational-excellence-pillar/observability.html>
 - **Google Cloud Architecture Framework — Reliability**: <https://cloud.google.com/architecture/framework/reliability>
+
+**APM & distributed tracing (see §04a)**
+- **Apache SkyWalking**: <https://skywalking.apache.org/>
+- **OpenTelemetry tracing & sampling**: <https://opentelemetry.io/docs/concepts/sampling/>
+- **Prometheus exemplars** (metrics↔traces link): <https://prometheus.io/docs/prometheus/latest/feature_flags/#exemplars-storage>
+- **W3C Trace Context** (propagation standard): <https://www.w3.org/TR/trace-context/>
+- **Jaeger**: <https://www.jaegertracing.io/> · **Grafana Tempo**: <https://grafana.com/oss/tempo/>
 
 ---
 

@@ -872,3 +872,46 @@ groups:
         annotations:
           summary: "Change failure rate >15% (7d)"
           description: "Deploy quality is slipping — deploys are getting riskier."
+
+  # ---- 25) APM / distributed tracing (§04a) ----------------------------------
+  - name: apm-tracing
+    rules:
+      - alert: TraceErrorRateHigh
+        expr: |
+          sum by (service) (rate(traces_spans_total{status="error"}[5m]))
+            / clamp_min(sum by (service) (rate(traces_spans_total[5m])), 1) > (14.4 * 0.001)
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "Trace-derived error rate burning SLO for {{ $labels.service }}"
+          description: "Errors deep in the call chain that an edge 5xx count can miss. Tune to your SLO."
+      - alert: DependencyEdgeErrors
+        expr: |
+          sum by (client, server) (rate(traces_edge_calls_total{status="error"}[5m]))
+            / clamp_min(sum by (client, server) (rate(traces_edge_calls_total[5m])), 1) > 0.1
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Dependency edge {{ $labels.client }}→{{ $labels.server }} error rate >10%"
+          description: "Pinpoints the failing link in the service-topology map."
+      - alert: ServiceApdexLow
+        expr: service_apdex < 0.8
+        for: 15m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Service Apdex <0.8 for {{ $labels.service }}"
+          description: "Per-service satisfaction score degraded — APM's headline health metric."
+      - alert: TracingPipelineBlind
+        expr: trace_sampling_rate < 0.001
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Trace sampling near zero — effectively blind"
+          description: "Sampling collapsed to ~0; rare-error and dependency visibility is lost."
+      - alert: DroppedSpansHigh
+        expr: rate(otelcol_processor_dropped_spans[5m]) > 0
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Collector dropping spans"
+          description: "Silent gaps in traces make root-cause analysis unreliable; the trace pipeline is saturated."
