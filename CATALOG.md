@@ -748,22 +748,22 @@ Legend: 🔴 Page · 🟠 Ticket · 🟢 Watch.
 |------|-------|-----|-----|---------------|
 | VM / IaaS | Virtual Machines | EC2 | Compute Engine | 🟠 CPU util + saturation · 🔴 memory available · 🟠 disk IOPS-consumed % · network in/out |
 | Autoscaling group | VM Scale Sets | Auto Scaling Groups | Managed Instance Groups | 🟠 desired vs in-service instances · scaling failures · pinned-at-max |
-| PaaS web app | App Service | Elastic Beanstalk / App Runner | App Engine / Cloud Run | 🔴 5xx (SLO burn) · 🟠 CPU/mem % · 🟠 request-queue length · p95 latency |
+| PaaS web app | App Service | Elastic Beanstalk | App Engine | 🔴 5xx (SLO burn) · 🟠 CPU/mem % · 🟠 request-queue length · p95 latency |
 | Serverless functions | Functions | Lambda | Cloud Functions | 🔴 error rate · 🔴 throttles/concurrency · 🟠 duration vs timeout · cold-start rate · DLQ |
 | Managed Kubernetes | AKS | EKS | GKE | 🔴 pod ready<desired / CrashLoop · 🔴 node NotReady · 🟠 CPU/mem working-set · etcd/API-server health |
-| Serverless containers | Container Apps | ECS Fargate / App Runner | Cloud Run | 🔴 5xx · 🟠 scale ceiling · replica restarts |
-| Batch | Batch | AWS Batch | Cloud Batch / Dataflow | 🔴 task/job failures · 🟠 queue wait · last-success age |
+| Serverless containers | Container Apps | App Runner · ECS on Fargate | Cloud Run | 🔴 5xx · 🟠 scale ceiling · replica restarts |
+| Batch | Batch | AWS Batch | Cloud Batch | 🔴 task/job failures · 🟠 queue wait · last-success age |
 
 ### Networking
 | Role | Azure | AWS | GCP | What to watch |
 |------|-------|-----|-----|---------------|
-| L4 load balancer | Load Balancer | NLB | Network/Passthrough LB | 🔴 healthy-host count · 🔴 SNAT/port exhaustion · byte/SYN counts |
-| L7 load balancer | Application Gateway | ALB | HTTP(S) LB | 🔴 unhealthy hosts · 🔴 backend 5xx · target latency · surge queue |
+| L4 load balancer | Load Balancer | Network Load Balancer (NLB) | Passthrough Network LB | 🔴 healthy-host count · 🔴 SNAT/port exhaustion · byte/SYN counts |
+| L7 load balancer | Application Gateway | Application Load Balancer (ALB) | Application Load Balancer | 🔴 unhealthy hosts · 🔴 backend 5xx · target latency · surge queue |
 | CDN / edge | Front Door / Azure CDN | CloudFront | Cloud CDN / Media CDN | 🟠 cache-hit ratio · 🔴 origin 5xx · origin latency · egress bytes |
-| Global DNS routing | Traffic Manager | Route 53 | Cloud DNS + GCLB | 🔴 endpoint/health-check status · query volume |
+| Global DNS routing | Traffic Manager | Route 53 | Cloud DNS (routing policies) | 🔴 endpoint/health-check status · query volume |
 | Site-to-site VPN | VPN Gateway | Site-to-Site VPN | Cloud VPN | 🔴 tunnel state · 🟠 tunnel bandwidth · ingress/egress packets |
 | Dedicated interconnect | ExpressRoute | Direct Connect | Cloud Interconnect | 🔴 BGP/peering availability · bits in/out · ARP/light levels |
-| Cloud firewall | Azure Firewall | Network Firewall | Cloud NGFW | 🔴 SNAT exhaustion · throughput · rule hits · health |
+| Cloud firewall | Azure Firewall | Network Firewall | Cloud NGFW | 🔴 throughput · rule hits · health · denied flows |
 | DDoS protection | DDoS Protection | Shield | Cloud Armor | 🔴 under-attack flag · dropped packets/bytes |
 | Outbound NAT | NAT Gateway | NAT Gateway | Cloud NAT | 🔴 SNAT port exhaustion · dropped packets · allocation errors |
 | Private connectivity | Private Link / Endpoint | PrivateLink (VPC Endpoint) | Private Service Connect | 🟢 bytes processed · connection state |
@@ -772,7 +772,7 @@ Legend: 🔴 Page · 🟠 Ticket · 🟢 Watch.
 | Role | Azure | AWS | GCP | What to watch |
 |------|-------|-----|-----|---------------|
 | Managed relational | SQL Database | RDS / Aurora | Cloud SQL / AlloyDB | 🟠 CPU/DTU/ACU % · 🔴 storage % · 🟠 connections vs max · 🔴 replica lag · deadlocks · buffer-cache hit |
-| Distributed SQL | SQL Hyperscale | Aurora | Cloud Spanner | 🟠 CPU % · 🔴 storage · commit/lock latency · replica/leader lag |
+| Distributed SQL | SQL Hyperscale · Cosmos DB for PostgreSQL | Aurora · Aurora DSQL | Cloud Spanner | 🟠 CPU % · 🔴 storage · commit/lock latency · replica/leader lag |
 
 ### Data — NoSQL / Cache
 | Role | Azure | AWS | GCP | What to watch |
@@ -791,7 +791,7 @@ Legend: 🔴 Page · 🟠 Ticket · 🟢 Watch.
 | Role | Azure | AWS | GCP | What to watch |
 |------|-------|-----|-----|---------------|
 | Queue | Service Bus / Storage Queues | SQS | Pub/Sub (pull) | 🔴 backlog growth · 🟠 oldest-message age · DLQ count · throttling |
-| Event streaming | Event Hubs | Kinesis / MSK | Pub/Sub / Managed Kafka | 🔴 consumer lag (egress vs ingress / iterator age) · under-replicated/offline partitions · throttling |
+| Event streaming | Event Hubs | Kinesis Data Streams · MSK | Pub/Sub · Managed Service for Apache Kafka | 🔴 consumer lag (egress vs ingress / iterator age) · under-replicated/offline partitions · throttling |
 | Event routing | Event Grid | EventBridge | Eventarc | 🟠 delivery failures · DLQ count · delivery latency |
 | API gateway | API Management | API Gateway | API Gateway / Apigee | 🟠 capacity/utilization · 🔴 5xx · 4xx/unauthorized · backend latency |
 | Workflow / orchestration | Logic Apps | Step Functions | Workflows | 🔴 run/execution failures · run latency · throttled executions |
@@ -799,11 +799,11 @@ Legend: 🔴 Page · 🟠 Ticket · 🟢 Watch.
 ### Analytics / Streaming / Data
 | Role | Azure | AWS | GCP | What to watch |
 |------|-------|-----|-----|---------------|
-| Stream processing | Stream Analytics | Kinesis Data Analytics / Managed Flink | Dataflow | 🔴 watermark/event-time lag · input backlog · 🟠 SU/worker utilization · runtime errors |
+| Stream processing | Stream Analytics | Managed Service for Apache Flink | Dataflow | 🔴 watermark/event-time lag · input backlog · 🟠 SU/worker utilization · runtime errors |
 | Batch ETL / pipelines | Data Factory | Glue / Step Functions | Dataflow / Composer | 🔴 failed runs · run duration · integration-runtime/worker saturation |
-| Data warehouse | Synapse (Dedicated Pool) | Redshift | BigQuery | 🟠 slot/DWU utilization · queued queries · spill · cache hit (BigQuery: slot ms, bytes scanned) |
+| Data warehouse | Synapse Analytics · Microsoft Fabric | Redshift | BigQuery | 🟠 slot/DWU utilization · queued queries · spill · cache hit (BigQuery: slot ms, bytes scanned) |
 | Big-data / Spark | Databricks / HDInsight | EMR | Dataproc | 🔴 job failures · executor CPU/mem · shuffle spill · queue |
-| Real-time analytics DB | Data Explorer (ADX) | OpenSearch Service | BigQuery (BI Engine) | 🟠 ingestion latency/failures · query duration · cache utilization |
+| Real-time analytics DB | Data Explorer (ADX) | OpenSearch Service · Timestream | BigQuery · Bigtable | 🟠 ingestion latency/failures · query duration · cache utilization |
 
 ### AI / ML
 | Role | Azure | AWS | GCP | What to watch |
@@ -815,10 +815,10 @@ Legend: 🔴 Page · 🟠 Ticket · 🟢 Watch.
 ### Identity & Security
 | Role | Azure | AWS | GCP | What to watch |
 |------|-------|-----|-----|---------------|
-| Identity provider | Entra ID | IAM / Cognito | Cloud Identity / IAM | 🔴 sign-in failure spike · risky sign-ins · conditional-access/MFA failures |
+| Identity provider | Entra ID | Cognito · IAM Identity Center | Cloud Identity · Identity Platform | 🔴 sign-in failure spike · risky sign-ins · conditional-access/MFA failures |
 | Secrets / key vault | Key Vault | Secrets Manager / KMS | Secret Manager / Cloud KMS | 🟠 API 4xx/5xx · 🟠 429 throttling · latency |
 | Posture / CSPM | Defender for Cloud | Security Hub / GuardDuty | Security Command Center | 🟠 new high/critical findings · secure-score drop |
-| SIEM | Microsoft Sentinel | OpenSearch / partners | Chronicle | 🔴 ingestion gap (blind spot) · incident count · rule health |
+| SIEM | Microsoft Sentinel | Security Lake · OpenSearch | Google SecOps (Chronicle) | 🔴 ingestion gap (blind spot) · incident count · rule health |
 | WAF | App Gateway / Front Door WAF | AWS WAF | Cloud Armor | 🟠 blocked requests · rule matches by category |
 
 ### Platform / Ops (the observability plane)
@@ -827,7 +827,7 @@ Legend: 🔴 Page · 🟠 Ticket · 🟢 Watch.
 | APM / tracing | Application Insights | X-Ray + CloudWatch | Cloud Trace + Monitoring | 🔴 request failure-rate & response-time SLO burn · dependency RED · exceptions |
 | Logs | Log Analytics | CloudWatch Logs | Cloud Logging | 🟠 ingestion volume/latency · daily-cap/quota hit · dropped logs |
 | Metrics / alerting | Azure Monitor + AMBA | CloudWatch Alarms | Cloud Monitoring + Alerting | 🔴 alert-pipeline health · notification delivery failures |
-| Platform status | Resource / Service Health | Health Dashboard / Health API | Service Health / Status | 🔴 provider-side outage affecting you |
+| Platform status | Resource Health · Service Health | Health Dashboard · Health API | Personalized Service Health | 🔴 provider-side outage affecting you |
 | Cost | Cost Management | Cost Explorer / Budgets | Billing / Budgets | 🔴 daily-spend anomaly · 🟠 budget burn |
 
 ### Provider metric catalogs (master lists)
