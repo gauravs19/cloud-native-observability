@@ -47,4 +47,5 @@ jobs:
       - name: Install yamllint
         run: pipx install yamllint
       - name: Lint YAML
-        run: yamllint -d "{extends: relaxed, rules: {line-length: disable}}" alerts/ .github/
+        run: |
+          yamllint -d "{extends: relaxed, rules: {line-length: disable}}" alerts/ .github/
