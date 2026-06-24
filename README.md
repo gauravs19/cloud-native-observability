@@ -1,5 +1,7 @@
 # Cloud-Native Observability — Master Metrics & Alerts Reference
 
+[![validate](https://github.com/gauravs19/cloud-native-observability/actions/workflows/validate.yml/badge.svg)](https://github.com/gauravs19/cloud-native-observability/actions/workflows/validate.yml)
+
 A generic, vendor-neutral master catalog of **everything worth observing** in a cloud-native
 solution — the signal types, every layer of the stack, the cross-cutting dimensions
 (security, cost, business, data quality, AI/LLM, delivery), and a categorized Azure service
