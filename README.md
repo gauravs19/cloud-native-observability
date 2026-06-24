@@ -15,7 +15,7 @@ map. Metric names follow OpenTelemetry / Prometheus conventions.
 
 | Path | What it is |
 |------|------------|
-| [`CATALOG.md`](./CATALOG.md) | The master catalog — 40 sections, every metric as `Metric · Tags · description` |
+| [`CATALOG.md`](./CATALOG.md) | The master catalog — 40 sections, every metric as `Metric · Method · Action · description` |
 | [`docs/cloud-provider-map.md`](./docs/cloud-provider-map.md) | The same roles mapped across **Azure / AWS / GCP**, with the vendor-neutral signal to watch |
 | [`dashboards/`](./dashboards/) | Importable **Grafana** dashboards as code — Golden Signals, RED-by-endpoint, USE-by-resource |
 | [`alerts/`](./alerts/) | Generic **Prometheus** alert rules — multi-window burn-rate SLO alerts + USE/RED/K8s/messaging/cert rules |
