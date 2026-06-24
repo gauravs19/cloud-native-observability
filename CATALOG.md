@@ -31,19 +31,93 @@ See [Methods & their theory](#methods--their-theory) for what each means.
 
 ## Methods & their theory
 
-Four complementary mental models tell you *what* to measure; each was invented to cover a blind spot the others leave, so they're used together and every metric carries the tag of the model it serves.
+Five mental models tell you *what* to measure. None is complete on its own; each was invented to cover a blind spot the others leave, so you use them together, and every metric in this catalog is tagged with the model it serves.
 
-- **Golden Signals (`GOLD`)** — from Google's *SRE Book*. **Latency, Traffic, Errors, Saturation.** The minimum viable set for any user-facing system. *Saturation* (how full the most-constrained resource is) is the one teams most often forget.
-- **RED** — Tom Wilkie (ex-Google, Grafana). **Rate, Errors, Duration.** A request-centric specialization of the Golden Signals, ideal *per endpoint / per service*. Drops saturation because it describes the *request*, not the *resource*.
-- **USE** — Brendan Gregg (Netflix/Sun). **Utilization, Saturation, Errors** *per resource* (CPU, memory, disk, NIC, pool). The mirror of RED: RED watches the work, USE watches the thing doing the work. Use it to find *why* something is slow once RED shows *that* it is.
-- **Four Key Metrics (`4KM` / DORA)** — the DORA research program (*Accelerate*). **Deploy Frequency, Lead Time, Change Failure Rate, MTTR.** Measure the *delivery system's* health and predict organizational performance.
-- **Business signals (`BIZ`)** — not a formal framework, but the ground truth: the events that represent *value* (orders, sign-ups, revenue). A system can be green on every infra metric while nobody can buy anything.
+### How they fit together
+
+```mermaid
+flowchart TB
+  BIZ["BIZ — business outcomes<br/>orders · revenue · sign-ups<br/>the ground truth"]
+  GOLD["GOLD — Golden Signals<br/>latency · traffic · errors · saturation"]
+  RED["RED — the request path<br/>Rate · Errors · Duration"]
+  USE["USE — the resources<br/>Utilization · Saturation · Errors"]
+  DORA["4KM / DORA — delivery pipeline<br/>deploy freq · lead time · CFR · MTTR"]
+  BIZ --> GOLD
+  GOLD --> RED
+  GOLD --> USE
+  RED -.->|"tells you THAT it's slow"| USE
+  DORA -.->|"change-induced incidents"| GOLD
+  classDef biz fill:#16242f,stroke:#16242f,color:#ffffff;
+  classDef gold fill:#0d7c87,stroke:#0d7c87,color:#ffffff;
+  classDef plain fill:#ffffff,stroke:#5c6f7c,color:#16242f;
+  class BIZ biz;
+  class GOLD gold;
+  class RED,USE,DORA plain;
+```
+
+Read it top-down. Business outcomes are what actually matter. Golden Signals are the umbrella over any user-facing service. RED watches the *work flowing through*, USE watches the *things doing the work* (so RED tells you *that* it's slow and USE tells you *why*), and DORA watches how often your own changes are what broke it.
+
+### The five at a glance
+
+| Method | Question it answers | Applies to | Components | Origin |
+|--------|--------------------|-----------|-----------|--------|
+| **GOLD** | Is the service healthy for users? | any user-facing service | Latency · Traffic · Errors · Saturation | Google *SRE Book* |
+| **RED** | Is this request path healthy? | services · endpoints · dependencies | Rate · Errors · Duration | Tom Wilkie (Weaveworks/Grafana) |
+| **USE** | Is this resource healthy? | CPU · memory · disk · NIC · pools · queues | Utilization · Saturation · Errors | Brendan Gregg |
+| **4KM** | Is our delivery healthy? | the CI/CD pipeline and team | Deploy freq · Lead time · CFR · MTTR | DORA / *Accelerate* |
+| **BIZ** | Is the system delivering value? | product / business outcomes | domain events (orders, revenue…) | no single source |
+
+### Golden Signals — the minimum viable set
+From Google's *Site Reliability Engineering* book. **Latency, Traffic, Errors, Saturation.** The reason it endures is that it's *complete enough to be safe and few enough to remember*: those four together capture almost everything a user can feel. The one teams skip is **saturation** — how full the most-constrained resource is — and it's the leading indicator. Latency and errors tell you you're already hurting; saturation tells you it's coming while you still have time. *Use it as the umbrella for every user-facing service.*
+
+### RED — Golden Signals for request traffic
+Tom Wilkie's request-centric distillation: **Rate, Errors, Duration.** Apply it *per service and per endpoint*, because a service that looks healthy on average can hide one completely broken route inside that average. It deliberately drops saturation, because it describes the *request*, not the *resource*. *Example: checkout endpoint at 1,200 req/s, 0.3% errors, p99 480 ms — three numbers that tell you almost everything about that route.*
+
+### USE — the mirror, for resources
+Brendan Gregg's complement: for every resource, watch **Utilization** (fraction of time busy), **Saturation** (work queued beyond what it can serve), and **Errors**. The idea most people get wrong: *utilization alone is not an incident.* A CPU at 100% with an empty run queue is well-used, not sick; what hurts is saturation (load above core count, swap activity, I/O wait). RED says a service is slow; USE says which resource it's choking on. *Always read utilization next to its saturation partner.*
+
+### Four Key Metrics (DORA) — delivery, not runtime
+From the DORA research (*Accelerate*): **Deployment Frequency, Lead Time for Changes, Change-Failure Rate, MTTR.** Not runtime numbers — they measure how you *ship*, and the research found they separate strong engineering orgs from weak ones. They belong here because a large share of incidents are change-induced; a high change-failure rate is a reliability problem no CPU graph will show.
+
+### Business signals — the ground truth
+The events that represent *value*: orders, sign-ups, payments, revenue/min. A system can be green on every infrastructure metric while nobody can actually buy anything, because the break is in a business path your infra metrics never touch. A drop in successful transactions is often the **first** sign of an outage. Instrument outcomes with the same rigor you give latency.
 
 > **Rule of thumb:** RED for request paths · USE for resources · Golden Signals as the umbrella · 4KM for the pipeline · BIZ as the ground truth.
 
-**Why percentiles, not averages?** Averages hide the tail. If p50 is 100 ms but p99 is 4 s, one in a hundred requests — often your heaviest users — has a terrible time while the average looks fine. Track `p50/p95/p99` (and `max`) so the unlucky tail is visible.
+### Why percentiles, not averages
+Averages hide the tail. If p50 latency is 100 ms but p99 is 4 s, one request in a hundred — often your heaviest, highest-value users — has a terrible time while the average (maybe 140 ms) looks fine. Always track `p50 / p95 / p99` and `max`. One caveat: you **cannot average percentiles** across instances or scrape windows — a "p99 of p99s" is meaningless. Aggregate the underlying histogram buckets (e.g. `histogram_quantile` over summed `_bucket` rates) instead.
 
-**Why burn rate, not raw thresholds?** A static "errors > 1%" either pages on harmless blips or misses a slow bleed. *Error-budget burn rate* measures how fast you're spending the failure you're allowed: fast burn pages, slow burn tickets — same SLO, severity scaled to real risk.
+### Why burn rate, not raw thresholds
+A static "errors > 1%" either pages on harmless blips or sleeps through a slow bleed. Reframe reliability as a **budget**: a 99.9% SLO allows 0.1% failure, ≈ 43 min/month. Then alert on how *fast* you're spending it — the **burn rate** — over two windows (a long one to avoid noise, a short one to clear fast once it recovers):
+
+| Burn rate | Budget gone in | Long window | Short window | Action |
+|-----------|---------------|-------------|--------------|--------|
+| **14.4×** | ~2 days | 1 h | 5 m | 🔴 Page |
+| **6×** | ~5 days | 6 h | 30 m | 🟠 Ticket (page if critical) |
+| **3×** | ~10 days | 24 h | 2 h | 🟠 Ticket |
+| **1×** | end of window | — | — | 🟢 none (on track) |
+
+### Actions — page, ticket, or watch
+Method tells you *what* to measure; the **action** tag tells you *what an alert should do*. The whole discipline is one rule: page only on something a user can feel, scaled to how fast the budget is burning.
+
+```mermaid
+flowchart TD
+  A(["A metric crosses its condition"]) --> B{"Can a user feel it<br/>right now?"}
+  B -->|"No — it's a cause / resource"| W["🟢 WATCH<br/>dashboard and diagnosis only<br/>never paged"]
+  B -->|Yes| C{"Is an SLO / error<br/>budget threatened?"}
+  C -->|No| W
+  C -->|Yes| D{"How fast is the<br/>budget burning?"}
+  D -->|"Fast · ~14× · gone in ~2 days"| P["🔴 PAGE<br/>wake a human now"]
+  D -->|"Slow · ~6× · gone in days"| T["🟠 TICKET<br/>handle in work hours"]
+  classDef page fill:#fbe7e4,stroke:#b23a2e,color:#16242f;
+  classDef ticket fill:#f8eed6,stroke:#9a6a0b,color:#16242f;
+  classDef watch fill:#e3f2ea,stroke:#2f7d57,color:#16242f;
+  class P page;
+  class T ticket;
+  class W watch;
+```
+
+Two corollaries: page on **symptoms, not causes** (high CPU is a cause, and possibly harmless — it belongs on a dashboard, not the pager), and alert on the **absence** of an expected signal too (a *dead-man's switch*: a job that should have run and didn't throws no error, so alert when its last success is too old).
 
 ---
 
@@ -162,6 +236,26 @@ Four complementary mental models tell you *what* to measure; each was invented t
 ---
 
 ## Part B — Metrics by layer
+
+A request flows top to bottom through these layers, and everything ultimately runs on the host / container / Kubernetes substrate. Each section below covers one box.
+
+```mermaid
+flowchart TB
+  U["User"] --> FE["01 · Frontend / RUM"]
+  FE --> CDN["08 · CDN / Edge"]
+  CDN --> LB["06 · Load Balancer · 07 DNS/TLS"]
+  LB --> GW["02 · API Gateway / Ingress"]
+  GW --> SVC["03 · Service / App<br/>04 mesh · 04a tracing/APM"]
+  SVC --> DB["09–10 · Database"]
+  SVC --> CACHE["11 · Cache"]
+  SVC --> MQ["12 · Messaging"]
+  SVC --> EXT["33 · Third-party APIs"]
+  SVC --> INFRA["runs on → 14 Host · 15 Container · 16 Kubernetes"]
+  classDef edge fill:#0d7c87,stroke:#0d7c87,color:#ffffff;
+  classDef plain fill:#ffffff,stroke:#5c6f7c,color:#16242f;
+  class U,FE edge;
+  class CDN,LB,GW,SVC,DB,CACHE,MQ,EXT,INFRA plain;
+```
 
 ### 01 · Frontend / Client (RUM)
 **Context.** The only layer that measures the *actual* user outcome rather than a server-side proxy for it. Google's **Core Web Vitals** (LCP/INP/CLS) encode perceived loading, responsiveness, and visual stability; **RUM** (field data from real devices) beats lab data because real networks and hardware vary enormously.

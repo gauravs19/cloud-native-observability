@@ -39,6 +39,25 @@ The **Method** says why the metric exists; the **Action** says what an alert sho
 | `4KM` | Four Key Metrics (DORA) | | | |
 | `BIZ` | Business / product signal | | | |
 
+The whole alerting discipline in one picture — page only on what a user can feel, scaled to how fast the error budget is burning:
+
+```mermaid
+flowchart TD
+  A(["An alert condition trips"]) --> B{"Can a user feel it<br/>right now?"}
+  B -->|"No — cause / resource"| W["🟢 WATCH<br/>dashboard only"]
+  B -->|Yes| C{"SLO / error budget<br/>threatened?"}
+  C -->|No| W
+  C -->|Yes| D{"How fast is the<br/>budget burning?"}
+  D -->|"Fast (~14×)"| P["🔴 PAGE"]
+  D -->|"Slow (~6×)"| T["🟠 TICKET"]
+  classDef page fill:#fbe7e4,stroke:#b23a2e,color:#16242f;
+  classDef ticket fill:#f8eed6,stroke:#9a6a0b,color:#16242f;
+  classDef watch fill:#e3f2ea,stroke:#2f7d57,color:#16242f;
+  class P page;
+  class T ticket;
+  class W watch;
+```
+
 ## Contents of `CATALOG.md`
 
 1. **Methods & their theory** — where RED / USE / Golden Signals / DORA come from
