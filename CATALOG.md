@@ -721,6 +721,8 @@ Four complementary mental models tell you *what* to measure; each was invented t
 
 **Context.** A concrete mapping of the generic layers above onto Azure Monitor metric names, by service category. Thresholds align with **Azure Monitor Baseline Alerts (AMBA)** — Microsoft's curated, deployable set of recommended alerts. APM ≈ **Application Insights** across all app tiers.
 
+> 🌐 **Multi-cloud?** See [`docs/cloud-provider-map.md`](./docs/cloud-provider-map.md) for the same roles mapped across **Azure / AWS / GCP** side by side.
+
 ### Compute
 | Service | Key metrics | Alert focus |
 |---------|-------------|-------------|

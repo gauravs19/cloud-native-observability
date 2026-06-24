@@ -1,0 +1,235 @@
+# Generic, vendor-neutral Prometheus alerting & recording rules.
+#
+# These implement the 🔴 Page / 🟠 Ticket rows from CATALOG.md using OpenTelemetry /
+# Prometheus metric-name conventions. They are TEMPLATES — adapt metric names, labels,
+# and thresholds to your stack and SLOs. The burn-rate alerts assume a 99.9% availability
+# SLO; change SLO_TARGET / the error-budget math if yours differs.
+#
+# Severity convention (label `severity`): page | ticket | watch  → route in Alertmanager.
+# Managed-cloud equivalents: Azure → AMBA; AWS → CloudWatch recommended alarms;
+# GCP → Cloud Monitoring alerting policies. Use these where you run your own Prometheus.
+
+groups:
+  # ----------------------------------------------------------------------------
+  # 1) SLO error-budget burn rate (the gold standard for paging on services).
+  #    Recording rules pre-compute the 5xx ratio over several windows; alerts fire
+  #    on multi-window, multi-burn-rate conditions (Google SRE Workbook).
+  # ----------------------------------------------------------------------------
+  - name: slo-recording
+    interval: 30s
+    rules:
+      - record: job:slo_errors:ratio_rate5m
+        expr: |
+          sum by (service) (rate(http_requests_total{status_code=~"5.."}[5m]))
+            / clamp_min(sum by (service) (rate(http_requests_total[5m])), 1)
+      - record: job:slo_errors:ratio_rate30m
+        expr: |
+          sum by (service) (rate(http_requests_total{status_code=~"5.."}[30m]))
+            / clamp_min(sum by (service) (rate(http_requests_total[30m])), 1)
+      - record: job:slo_errors:ratio_rate1h
+        expr: |
+          sum by (service) (rate(http_requests_total{status_code=~"5.."}[1h]))
+            / clamp_min(sum by (service) (rate(http_requests_total[1h])), 1)
+      - record: job:slo_errors:ratio_rate6h
+        expr: |
+          sum by (service) (rate(http_requests_total{status_code=~"5.."}[6h]))
+            / clamp_min(sum by (service) (rate(http_requests_total[6h])), 1)
+
+  - name: slo-burn-rate
+    rules:
+      # SLO target 99.9% → error budget = 0.001. Fast burn: 14.4x over 1h+5m → budget
+      # gone in ~2 days. Page.
+      - alert: ErrorBudgetBurnFast
+        expr: |
+          job:slo_errors:ratio_rate1h > (14.4 * 0.001)
+          and
+          job:slo_errors:ratio_rate5m > (14.4 * 0.001)
+        for: 2m
+        labels: { severity: page }
+        annotations:
+          summary: "Fast error-budget burn on {{ $labels.service }}"
+          description: "5xx ratio is burning the 99.9% SLO budget ~14.4x (1h & 5m windows). Budget exhausts in ~2 days at this rate."
+          runbook: "https://runbooks.example.com/slo-burn"
+      # Slow burn: 6x over 6h+30m → page at lower urgency / route to ticket if preferred.
+      - alert: ErrorBudgetBurnSlow
+        expr: |
+          job:slo_errors:ratio_rate6h > (6 * 0.001)
+          and
+          job:slo_errors:ratio_rate30m > (6 * 0.001)
+        for: 15m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Slow error-budget burn on {{ $labels.service }}"
+          description: "5xx ratio is burning the 99.9% SLO budget ~6x (6h & 30m windows)."
+          runbook: "https://runbooks.example.com/slo-burn"
+
+  # ----------------------------------------------------------------------------
+  # 2) Service latency (RED — duration). Page on p99 SLO breach.
+  # ----------------------------------------------------------------------------
+  - name: service-latency
+    rules:
+      - alert: HighLatencyP99
+        expr: |
+          histogram_quantile(0.99,
+            sum by (le, service) (rate(http_request_duration_seconds_bucket[5m]))
+          ) > 1
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "p99 latency > 1s on {{ $labels.service }}"
+          description: "Tune the 1s threshold to your latency SLO; page instead of ticket if this endpoint is on the critical path."
+
+  # ----------------------------------------------------------------------------
+  # 3) Resource saturation (USE). Pair utilization with saturation.
+  # ----------------------------------------------------------------------------
+  - name: host-use
+    rules:
+      - alert: CpuSaturation
+        expr: node_load1 / count by (instance) (node_cpu_seconds_total{mode="idle"}) > 1.5
+        for: 15m
+        labels: { severity: ticket }
+        annotations:
+          summary: "CPU run-queue saturated on {{ $labels.instance }}"
+          description: "Load per core > 1.5 sustained — work is waiting on CPU (saturation, not mere utilization)."
+      - alert: MemoryPressure
+        expr: (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) < 0.1
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: "Low available memory on {{ $labels.instance }}"
+          description: "Available memory < 10%; OOM-kill / swap-thrash risk."
+      - alert: DiskWillFillSoon
+        # Predictive: linear-extrapolate the root filesystem to empty within 4 hours.
+        expr: |
+          predict_linear(node_filesystem_avail_bytes{mountpoint="/"}[6h], 4*3600) < 0
+          and
+          (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) < 0.2
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: "Disk on {{ $labels.instance }} will fill within ~4h"
+          description: "Alert on predicted time-to-full, not a static %, so you act before writes fail."
+      - alert: NetworkErrorsHigh
+        expr: |
+          rate(node_network_receive_errs_total[5m]) + rate(node_network_transmit_errs_total[5m])
+          + rate(node_network_receive_drop_total[5m]) + rate(node_network_transmit_drop_total[5m]) > 0
+        for: 15m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Interface errors/drops on {{ $labels.instance }} {{ $labels.device }}"
+          description: "Sustained non-zero error/drop rate — NIC, MTU, or buffer issue."
+
+  # ----------------------------------------------------------------------------
+  # 4) Kubernetes workloads & control plane.
+  # ----------------------------------------------------------------------------
+  - name: kubernetes
+    rules:
+      - alert: PodCrashLooping
+        expr: rate(kube_pod_container_status_restarts_total[15m]) * 60 * 15 > 3
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} crash-looping"
+          description: ">3 restarts in 15m — failing to start and serving nothing."
+      - alert: DeploymentReplicasUnavailable
+        expr: |
+          kube_deployment_status_replicas_available
+            / kube_deployment_spec_replicas < 0.5
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: "Deployment {{ $labels.namespace }}/{{ $labels.deployment }} below 50% ready"
+          description: "Ready replicas under half of desired — capacity to serve is at risk."
+      - alert: NodeNotReady
+        expr: kube_node_status_condition{condition="Ready",status="true"} == 0
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "Node {{ $labels.node }} NotReady"
+          description: "NotReady node triggers pod eviction cascade."
+      - alert: ContainerOOMKilled
+        expr: increase(kube_pod_container_status_last_terminated_reason{reason="OOMKilled"}[15m]) > 0
+        for: 0m
+        labels: { severity: ticket }
+        annotations:
+          summary: "OOMKill in {{ $labels.namespace }}/{{ $labels.pod }}"
+          description: "Working set exceeded the memory limit — raise the limit or fix the leak."
+      - alert: ApiServerErrorsHigh
+        expr: |
+          sum(rate(apiserver_request_total{code=~"5.."}[5m]))
+            / clamp_min(sum(rate(apiserver_request_total[5m])), 1) > 0.05
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: "Kubernetes API server 5xx > 5%"
+          description: "Control plane degraded — reconciliation and scaling stop working."
+
+  # ----------------------------------------------------------------------------
+  # 5) Dependencies, pools, and saturation of the service itself.
+  # ----------------------------------------------------------------------------
+  - name: service-saturation
+    rules:
+      - alert: ConnectionPoolNearExhaustion
+        expr: db_connections_active / db_connections_max > 0.9
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "DB connection pool >90% on {{ $labels.service }}"
+          description: "Pool exhaustion stalls every request app-wide."
+      - alert: DependencyErrorRateHigh
+        expr: |
+          sum by (peer_service) (rate(dependency_calls_total{outcome="error"}[5m]))
+            / clamp_min(sum by (peer_service) (rate(dependency_calls_total[5m])), 1) > 0.1
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Downstream {{ $labels.peer_service }} error rate >10%"
+          description: "Trigger fallback/degrade; isolates a dependency fault from your own."
+
+  # ----------------------------------------------------------------------------
+  # 6) Messaging / async pipelines — health is lag, not latency.
+  # ----------------------------------------------------------------------------
+  - name: messaging
+    rules:
+      - alert: ConsumerLagGrowing
+        expr: kafka_consumergroup_lag > 100000
+        for: 15m
+        labels: { severity: page }
+        annotations:
+          summary: "Consumer lag high for group {{ $labels.consumergroup }}"
+          description: "Consumers can't keep up; end-to-end staleness climbing. Tune the absolute threshold to your throughput."
+      - alert: DeadLetterQueueGrowing
+        expr: increase(messaging_dlq_messages_total[15m]) > 0
+        for: 5m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Dead-letter queue growing for {{ $labels.queue }}"
+          description: "Messages are failing processing — investigate the poison message / consumer bug."
+
+  # ----------------------------------------------------------------------------
+  # 7) Certificates, and absence-of-signal (dead-man's switch).
+  # ----------------------------------------------------------------------------
+  - name: certs-and-heartbeats
+    rules:
+      - alert: CertificateExpiringSoon
+        expr: (probe_ssl_earliest_cert_expiry - time()) / 86400 < 7
+        for: 1h
+        labels: { severity: page }
+        annotations:
+          summary: "TLS cert for {{ $labels.instance }} expires in <7 days"
+          description: "Expired certs cause sudden, total, preventable outages. (Ticket at <30 days.)"
+      - alert: BatchJobMissedSchedule
+        # Dead-man's switch: a job that should have succeeded recently hasn't.
+        expr: time() - job_last_success_timestamp_seconds > 86400
+        for: 0m
+        labels: { severity: page }
+        annotations:
+          summary: "Job {{ $labels.job_name }} has not succeeded in >24h"
+          description: "Alerts on the ABSENCE of an expected success — catches silent scheduler failures."
+      - alert: TargetDown
+        expr: up == 0
+        for: 5m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Scrape target {{ $labels.job }} / {{ $labels.instance }} is down"
+          description: "Either the target is down or the telemetry pipeline is blind to it — investigate both."
