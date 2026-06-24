@@ -27,10 +27,10 @@ your cloud, and the dashboards + alerts as a *starting implementation*.
 
 ## How it's organized
 
-Each metric is one table row: **Metric · Tags · Detailed description** (what it measures, why
-it matters, and the recommended alert with its rationale).
+Each metric is one table row: **Metric · Method · Action · Detailed description** (what it
+measures, why it matters, and the recommended alert with its rationale).
 
-**Tags** combine the *method* (why the metric exists) and the *action* (what an alert should do):
+The **Method** says why the metric exists; the **Action** says what an alert should do:
 
 | Method | Meaning | | Action | Meaning |
 |--------|---------|---|--------|---------|
