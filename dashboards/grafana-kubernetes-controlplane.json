@@ -1,0 +1,55 @@
+{
+  "__inputs": [
+    { "name": "DS_PROMETHEUS", "label": "Prometheus", "type": "datasource", "pluginId": "prometheus", "pluginName": "Prometheus" }
+  ],
+  "title": "Kubernetes — Control Plane Health",
+  "uid": "k8s-controlplane",
+  "tags": ["observability", "kubernetes", "etcd", "template"],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "30s",
+  "time": { "from": "now-3h", "to": "now" },
+  "templating": {
+    "list": [ { "name": "DS_PROMETHEUS", "type": "datasource", "query": "prometheus", "current": {}, "hide": 0 } ]
+  },
+  "panels": [
+    {
+      "id": 1, "title": "API server request latency (p99)", "type": "timeseries",
+      "datasource": "${DS_PROMETHEUS}", "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [ { "expr": "histogram_quantile(0.99, sum by (le, verb) (rate(apiserver_request_duration_seconds_bucket[5m])))", "legendFormat": "{{verb}}", "refId": "A" } ]
+    },
+    {
+      "id": 2, "title": "API server 5xx ratio", "type": "timeseries",
+      "datasource": "${DS_PROMETHEUS}", "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "targets": [ { "expr": "sum(rate(apiserver_request_total{code=~\"5..\"}[5m])) / clamp_min(sum(rate(apiserver_request_total[5m])), 1)", "legendFormat": "5xx ratio", "refId": "A" } ]
+    },
+    {
+      "id": 3, "title": "etcd WAL fsync latency (p99)", "type": "timeseries",
+      "datasource": "${DS_PROMETHEUS}", "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "description": "Slow fsync destabilizes the whole cluster. Page above ~500ms.",
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [ { "expr": "histogram_quantile(0.99, sum by (le) (rate(etcd_disk_wal_fsync_duration_seconds_bucket[5m])))", "legendFormat": "fsync p99", "refId": "A" } ]
+    },
+    {
+      "id": 4, "title": "etcd DB size vs quota", "type": "timeseries",
+      "datasource": "${DS_PROMETHEUS}", "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "targets": [ { "expr": "etcd_mvcc_db_total_size_in_bytes / etcd_server_quota_backend_bytes", "legendFormat": "db/quota", "refId": "A" } ]
+    },
+    {
+      "id": 5, "title": "Pending pods", "type": "timeseries",
+      "datasource": "${DS_PROMETHEUS}", "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [ { "expr": "sum(kube_pod_status_phase{phase=\"Pending\"})", "legendFormat": "pending", "refId": "A" } ]
+    },
+    {
+      "id": 6, "title": "CoreDNS SERVFAIL rate", "type": "timeseries",
+      "datasource": "${DS_PROMETHEUS}", "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "targets": [ { "expr": "sum(rate(coredns_dns_responses_total{rcode=\"SERVFAIL\"}[5m]))", "legendFormat": "SERVFAIL/s", "refId": "A" } ]
+    }
+  ]
+}

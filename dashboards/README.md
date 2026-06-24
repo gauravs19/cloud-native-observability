@@ -1,12 +1,16 @@
 # Grafana dashboards (as code)
 
-Three generic, importable Grafana dashboards built on the methods in [`../CATALOG.md`](../CATALOG.md):
+Seven generic, importable Grafana dashboards built on the methods in [`../CATALOG.md`](../CATALOG.md):
 
 | File | Method | Shows |
 |------|--------|-------|
 | `grafana-golden-signals.json` | GOLD | Traffic · Errors · Latency (p50/p95/p99) · Saturation — service overview |
 | `grafana-red-by-endpoint.json` | RED | Rate / Errors / Duration sliced by route, plus per-dependency error ratio |
 | `grafana-use-resources.json` | USE | CPU util + saturation, memory, disk used + I/O, network errors — per node |
+| `grafana-messaging.json` | GOLD | Consumer lag, publish vs consume, oldest-message age, DLQ growth, broker partitions |
+| `grafana-kubernetes-controlplane.json` | USE/RED | API-server latency & 5xx, etcd fsync & DB-size, pending pods, CoreDNS SERVFAILs |
+| `grafana-dependencies.json` | RED | Per-dependency error & latency, circuit-breaker state, pool utilization, retries/timeouts |
+| `grafana-cost-and-business.json` | BIZ | Successful transactions, revenue, conversion, daily spend vs avg, budget gauge, cost/txn |
 
 ## Importing
 

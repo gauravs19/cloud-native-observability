@@ -1,0 +1,54 @@
+{
+  "__inputs": [
+    { "name": "DS_PROMETHEUS", "label": "Prometheus", "type": "datasource", "pluginId": "prometheus", "pluginName": "Prometheus" }
+  ],
+  "title": "Dependencies & Saturation",
+  "uid": "dependencies-saturation",
+  "tags": ["observability", "dependencies", "resilience", "template"],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "30s",
+  "time": { "from": "now-3h", "to": "now" },
+  "templating": {
+    "list": [
+      { "name": "DS_PROMETHEUS", "type": "datasource", "query": "prometheus", "current": {}, "hide": 0 },
+      { "name": "service", "type": "query", "datasource": "${DS_PROMETHEUS}", "query": "label_values(dependency_calls_total, service)", "refresh": 2, "includeAll": false, "multi": false, "current": {} }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1, "title": "Downstream error ratio by dependency", "type": "timeseries",
+      "datasource": "${DS_PROMETHEUS}", "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "targets": [ { "expr": "sum by (peer_service) (rate(dependency_calls_total{service=\"$service\",outcome=\"error\"}[5m])) / clamp_min(sum by (peer_service) (rate(dependency_calls_total{service=\"$service\"}[5m])), 1)", "legendFormat": "{{peer_service}}", "refId": "A" } ]
+    },
+    {
+      "id": 2, "title": "Downstream latency (p99) by dependency", "type": "timeseries",
+      "datasource": "${DS_PROMETHEUS}", "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [ { "expr": "histogram_quantile(0.99, sum by (le, peer_service) (rate(dependency_call_duration_seconds_bucket{service=\"$service\"}[5m])))", "legendFormat": "{{peer_service}}", "refId": "A" } ]
+    },
+    {
+      "id": 3, "title": "Circuit breaker state (1 = open)", "type": "timeseries",
+      "datasource": "${DS_PROMETHEUS}", "gridPos": { "h": 8, "w": 8, "x": 0, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "short", "max": 1 }, "overrides": [] },
+      "targets": [ { "expr": "max by (peer_service) (circuit_breaker_open{service=\"$service\"})", "legendFormat": "{{peer_service}}", "refId": "A" } ]
+    },
+    {
+      "id": 4, "title": "Connection / thread pool utilization", "type": "timeseries",
+      "datasource": "${DS_PROMETHEUS}", "gridPos": { "h": 8, "w": 8, "x": 8, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 0.9 } ] } }, "overrides": [] },
+      "targets": [ { "expr": "pool_in_use{service=\"$service\"} / clamp_min(pool_max{service=\"$service\"}, 1)", "legendFormat": "{{pool}}", "refId": "A" } ]
+    },
+    {
+      "id": 5, "title": "Retry & timeout rate", "type": "timeseries",
+      "datasource": "${DS_PROMETHEUS}", "gridPos": { "h": 8, "w": 8, "x": 16, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "targets": [
+        { "expr": "sum(rate(dependency_retries_total{service=\"$service\"}[5m]))", "legendFormat": "retries/s", "refId": "A" },
+        { "expr": "sum(rate(dependency_timeouts_total{service=\"$service\"}[5m]))", "legendFormat": "timeouts/s", "refId": "B" }
+      ]
+    }
+  ]
+}

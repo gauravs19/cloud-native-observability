@@ -1,0 +1,59 @@
+{
+  "__inputs": [
+    { "name": "DS_PROMETHEUS", "label": "Prometheus", "type": "datasource", "pluginId": "prometheus", "pluginName": "Prometheus" }
+  ],
+  "title": "Cost & Business KPIs",
+  "uid": "cost-business",
+  "tags": ["observability", "finops", "business", "template"],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "1m",
+  "time": { "from": "now-24h", "to": "now" },
+  "templating": {
+    "list": [ { "name": "DS_PROMETHEUS", "type": "datasource", "query": "prometheus", "current": {}, "hide": 0 } ]
+  },
+  "panels": [
+    {
+      "id": 1, "title": "Successful transactions / min", "type": "timeseries",
+      "datasource": "${DS_PROMETHEUS}", "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "description": "Often the FIRST sign of an outage — watch for sharp drops even when infra is green.",
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [ { "expr": "sum(rate(business_transactions_total{outcome=\"success\"}[5m])) * 60", "legendFormat": "success/min", "refId": "A" } ]
+    },
+    {
+      "id": 2, "title": "Revenue / min", "type": "timeseries",
+      "datasource": "${DS_PROMETHEUS}", "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] },
+      "targets": [ { "expr": "sum(rate(business_revenue_usd_total[5m])) * 60", "legendFormat": "revenue/min", "refId": "A" } ]
+    },
+    {
+      "id": 3, "title": "Funnel conversion rate", "type": "timeseries",
+      "datasource": "${DS_PROMETHEUS}", "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "targets": [ { "expr": "sum(rate(funnel_completions_total[15m])) / clamp_min(sum(rate(funnel_starts_total[15m])), 1)", "legendFormat": "conversion", "refId": "A" } ]
+    },
+    {
+      "id": 4, "title": "Daily spend vs 14-day average", "type": "timeseries",
+      "datasource": "${DS_PROMETHEUS}", "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] },
+      "targets": [
+        { "expr": "cloud_spend_daily_usd", "legendFormat": "today", "refId": "A" },
+        { "expr": "avg_over_time(cloud_spend_daily_usd[14d])", "legendFormat": "14d avg", "refId": "B" }
+      ]
+    },
+    {
+      "id": 5, "title": "Month-to-date spend vs budget", "type": "gauge",
+      "datasource": "${DS_PROMETHEUS}", "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1.2, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 0.8 }, { "color": "red", "value": 1 } ] } }, "overrides": [] },
+      "targets": [ { "expr": "cloud_spend_month_to_date_usd / clamp_min(cloud_budget_month_usd, 1)", "legendFormat": "MTD / budget", "refId": "A" } ]
+    },
+    {
+      "id": 6, "title": "Cost per successful transaction", "type": "timeseries",
+      "datasource": "${DS_PROMETHEUS}", "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "description": "Unit economics — rising means efficiency is degrading even if total spend is flat.",
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] },
+      "targets": [ { "expr": "rate(cloud_spend_usd_total[1h]) / clamp_min(rate(business_transactions_total{outcome=\"success\"}[1h]), 1)", "legendFormat": "cost/txn", "refId": "A" } ]
+    }
+  ]
+}

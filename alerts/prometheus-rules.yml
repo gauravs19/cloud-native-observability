@@ -233,3 +233,642 @@ groups:
         annotations:
           summary: "Scrape target {{ $labels.job }} / {{ $labels.instance }} is down"
           description: "Either the target is down or the telemetry pipeline is blind to it — investigate both."
+
+  # ============================================================================
+  # FULL Page+Ticket COVERAGE — the remaining domains from CATALOG.md.
+  # Every rule below maps to a 🔴/🟠 row. Metric names are generic conventions;
+  # rename to your exporters. 🟢 Watch rows are intentionally NOT alerts.
+  # ============================================================================
+
+  # ---- 8) Database — relational engine internals -----------------------------
+  - name: database-relational
+    rules:
+      - alert: DbReplicationLagHigh
+        expr: db_replication_lag_seconds > 30
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "DB replication lag >30s on {{ $labels.instance }}"
+          description: "Risks stale reads now and data loss on failover. Tune to your tolerable staleness."
+      - alert: DbDeadlockRateHigh
+        expr: rate(db_deadlocks_total[5m]) > 0.1
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Rising deadlocks on {{ $labels.instance }}"
+          description: "Write contention — alert on rate, not single events."
+      - alert: DbBufferCacheHitLow
+        expr: db_buffer_cache_hit_ratio < 0.95
+        for: 15m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Buffer-cache hit ratio <95% on {{ $labels.instance }}"
+          description: "Memory pressure or plans that stopped using indexes; reads spilling to disk."
+      - alert: DbStorageNearFull
+        expr: db_storage_used_bytes / db_storage_total_bytes > 0.85
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: "DB storage >85% on {{ $labels.instance }}"
+          description: "A full data disk stalls writes. Provision ahead of the wall."
+      - alert: DbConnectionWaitHigh
+        expr: db_connection_acquire_wait_seconds > 1
+        for: 5m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Clients waiting >1s for a DB connection on {{ $labels.service }}"
+          description: "Leading indicator of pool exhaustion before connections error."
+
+  # ---- 9) Database — NoSQL / throughput-provisioned --------------------------
+  - name: database-nosql
+    rules:
+      - alert: NoSqlThrottling
+        expr: rate(nosql_throttled_requests_total[5m]) > 0
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "NoSQL 429 throttling on {{ $labels.database }}"
+          description: "Under-provisioned throughput units or a hot partition — requests are failing."
+      - alert: NoSqlThroughputNearLimit
+        expr: nosql_consumed_throughput / nosql_provisioned_throughput > 0.8
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "NoSQL throughput >80% of provisioned on {{ $labels.database }}"
+          description: "Precursor to throttling; raise RU/RCU/WCU or autoscale."
+      - alert: NoSqlHotPartition
+        expr: max by (database) (nosql_partition_consumed_ratio) > 0.9
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Hot partition on {{ $labels.database }}"
+          description: "Load concentrated on one partition — revisit the partition key."
+
+  # ---- 10) Cache -------------------------------------------------------------
+  - name: cache
+    rules:
+      - alert: CacheHitRatioLow
+        expr: cache_hits_total / clamp_min(cache_hits_total + cache_misses_total, 1) < 0.8
+        for: 15m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Cache hit ratio <80% on {{ $labels.instance }}"
+          description: "Misses fall through to the DB — a hidden load multiplier."
+      - alert: CacheEvictionsHigh
+        expr: rate(cache_evictions_total[5m]) > 0
+        for: 15m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Cache evictions on {{ $labels.instance }}"
+          description: "Undersized cache or maxmemory reached; hit ratio will follow it down."
+      - alert: CacheMemoryHigh
+        expr: cache_memory_used_bytes / cache_maxmemory_bytes > 0.85
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Cache memory >85% on {{ $labels.instance }}"
+          description: "Eviction or write-rejection imminent depending on policy."
+      - alert: CacheReplicationDown
+        expr: cache_replication_link_up == 0
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "Cache replication link down on {{ $labels.instance }}"
+          description: "Lost failover/read replica and HA with it."
+
+  # ---- 11) Object / block storage --------------------------------------------
+  - name: storage
+    rules:
+      - alert: ObjectStorageAvailabilityLow
+        expr: storage_availability_ratio < 0.99
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "Object storage availability <99% on {{ $labels.account }}"
+          description: "Below SLA — the headline storage reliability signal."
+      - alert: StorageThrottling
+        expr: rate(storage_throttled_requests_total[5m]) > 0
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Storage throttling on {{ $labels.account }}"
+          description: "Exceeding per-partition scalability targets or a hot prefix."
+      - alert: BlockDiskIopsSaturated
+        expr: disk_iops_consumed_ratio > 0.95
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Managed disk IOPS >95% of tier cap on {{ $labels.instance }}"
+          description: "Hitting the disk's hard ceiling; everything on it slows."
+
+  # ---- 12) Serverless / FaaS -------------------------------------------------
+  - name: serverless
+    rules:
+      - alert: FunctionErrorRateHigh
+        expr: |
+          sum by (function) (rate(function_invocations_total{outcome="error"}[5m]))
+            / clamp_min(sum by (function) (rate(function_invocations_total[5m])), 1) > 0.05
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: "Function {{ $labels.function }} error rate >5%"
+          description: "Core serving-health signal for the function."
+      - alert: FunctionThrottled
+        expr: rate(function_throttles_total[5m]) > 0
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "Function {{ $labels.function }} is being throttled"
+          description: "Concurrency limit exhausted — invocations are being dropped."
+      - alert: FunctionIteratorAgeHigh
+        expr: function_iterator_age_seconds > 300
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "Stream-triggered function {{ $labels.function }} falling behind (>5m)"
+          description: "Iterator age growing — the function can't keep up with its source."
+      - alert: FunctionNearTimeout
+        expr: |
+          histogram_quantile(0.99, sum by (le, function) (rate(function_duration_seconds_bucket[5m])))
+            / on (function) function_timeout_seconds > 0.9
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Function {{ $labels.function }} p99 within 10% of timeout"
+          description: "Will start failing under load spikes; raise timeout or optimize."
+
+  # ---- 13) Search engine -----------------------------------------------------
+  - name: search-engine
+    rules:
+      - alert: SearchClusterRed
+        expr: elasticsearch_cluster_health_status{color="red"} == 1
+        for: 2m
+        labels: { severity: page }
+        annotations:
+          summary: "Search cluster {{ $labels.cluster }} is RED"
+          description: "Primary shards unassigned — some data is unavailable for read/write."
+      - alert: SearchUnassignedShards
+        expr: elasticsearch_cluster_unassigned_shards > 0
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: "Unassigned shards on {{ $labels.cluster }}"
+          description: "Data at risk/unavailable; cluster can't self-heal."
+      - alert: SearchHeapHigh
+        expr: elasticsearch_jvm_heap_used_ratio > 0.85
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: "Search node heap >85% on {{ $labels.node }}"
+          description: "Approaching a GC death spiral — node spends CPU collecting, not serving."
+      - alert: SearchThreadpoolRejections
+        expr: rate(elasticsearch_threadpool_rejected_total[5m]) > 0
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Search threadpool rejections on {{ $labels.node }}"
+          description: "Saturation — requests are being shed."
+
+  # ---- 14) Security & identity -----------------------------------------------
+  - name: security
+    rules:
+      - alert: AuthFailureSpike
+        expr: |
+          sum(rate(auth_attempts_total{outcome="failure"}[5m]))
+            > 3 * sum(rate(auth_attempts_total{outcome="failure"}[1h] offset 1h))
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Auth failure rate spiking"
+          description: "3x the prior hour — brute force, credential stuffing, or an auth-provider outage."
+      - alert: CredentialStuffingPerAccount
+        expr: sum by (account) (rate(auth_attempts_total{outcome="failure"}[5m])) > 1
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "High failed-login rate on account {{ $labels.account }}"
+          description: "Failures concentrated on single principals — targeted attack signature."
+      - alert: WafBlockedSpike
+        expr: sum(rate(waf_blocked_requests_total[5m])) > 10
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "WAF blocking surge"
+          description: "Attack-pattern spike (SQLi/XSS/etc.); also check for false positives blocking users."
+      - alert: DdosUnderAttack
+        expr: ddos_under_attack == 1
+        for: 0m
+        labels: { severity: page }
+        annotations:
+          summary: "DDoS mitigation active on {{ $labels.resource }}"
+          description: "Under active volumetric attack — capacity and cost at risk."
+      - alert: SecretStoreThrottling
+        expr: rate(secret_store_requests_total{code="429"}[5m]) > 0
+        for: 5m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Secret store (vault) throttling"
+          description: "429s break secret/cert fetches and cascade into app failures."
+      - alert: UnusualDataEgress
+        expr: sum by (source) (rate(network_egress_bytes_total[5m])) > 3 * sum by (source) (rate(network_egress_bytes_total[1h] offset 1d))
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: "Anomalous outbound data volume from {{ $labels.source }}"
+          description: "Classic data-exfiltration signature — investigate immediately."
+      - alert: AuditLogGap
+        expr: time() - audit_log_last_received_timestamp_seconds > 300
+        for: 0m
+        labels: { severity: page }
+        annotations:
+          summary: "Audit-log pipeline gap (>5m)"
+          description: "A blind spot that hides every other security signal, and itself a compliance failure."
+
+  # ---- 15) Cost / FinOps -----------------------------------------------------
+  - name: cost-finops
+    rules:
+      - alert: DailySpendAnomaly
+        expr: cloud_spend_daily_usd > 1.5 * avg_over_time(cloud_spend_daily_usd[14d])
+        for: 0m
+        labels: { severity: page }
+        annotations:
+          summary: "Daily spend 50% above 14-day average"
+          description: "Often the first sign of a runaway resource, misconfiguration, or abuse."
+      - alert: BudgetBurnHigh
+        expr: cloud_spend_month_to_date_usd / cloud_budget_month_usd > (day_of_month() / 31) + 0.15
+        for: 1h
+        labels: { severity: ticket }
+        annotations:
+          summary: "Monthly spend pacing >15% ahead of budget"
+          description: "Burn rate will exceed budget at current pace."
+
+  # ---- 16) Data pipeline / quality -------------------------------------------
+  - name: data-pipeline-quality
+    rules:
+      - alert: PipelineFailed
+        expr: increase(pipeline_runs_total{status="failed"}[15m]) > 0
+        for: 0m
+        labels: { severity: page }
+        annotations:
+          summary: "Pipeline {{ $labels.pipeline }} run failed"
+          description: "Downstream reports, models, and decisions depend on it."
+      - alert: DataFreshnessStale
+        expr: data_freshness_seconds > 3600
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: "Data for {{ $labels.dataset }} stale >1h"
+          description: "Consumers are deciding on old data. Tune to the dataset's freshness SLA."
+      - alert: RowCountDrop
+        expr: pipeline_records_out / clamp_min(pipeline_records_in, 1) < 0.9
+        for: 0m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Row-count drop in {{ $labels.pipeline }} (>10% lost)"
+          description: "Silent data loss that throws no error — the data world's 500."
+      - alert: SchemaDriftDetected
+        expr: increase(pipeline_schema_drift_total[15m]) > 0
+        for: 0m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Schema drift in {{ $labels.dataset }}"
+          description: "Source schema changed; breaks downstream transforms."
+      - alert: DataValidationFailures
+        expr: rate(data_validation_failures_total[10m]) > 0
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Data-quality validation failing for {{ $labels.dataset }}"
+          description: "Bad data entering the warehouse silently poisons analytics/ML."
+
+  # ---- 17) AI / ML / LLM serving ---------------------------------------------
+  - name: ai-ml-llm
+    rules:
+      - alert: InferenceErrorRateHigh
+        expr: |
+          sum by (model) (rate(inference_requests_total{outcome="error"}[5m]))
+            / clamp_min(sum by (model) (rate(inference_requests_total[5m])), 1) > 0.05
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: "Inference error rate >5% for {{ $labels.model }}"
+          description: "Core serving-health signal."
+      - alert: ModelProviderThrottling
+        expr: rate(llm_provider_requests_total{code="429"}[5m]) > 0
+        for: 5m
+        labels: { severity: ticket }
+        annotations:
+          summary: "LLM provider throttling ({{ $labels.provider }})"
+          description: "Hit the provider quota — trigger fallback or request more capacity."
+      - alert: GpuUtilizationHigh
+        expr: gpu_utilization_ratio > 0.9
+        for: 15m
+        labels: { severity: ticket }
+        annotations:
+          summary: "GPU >90% on {{ $labels.instance }}"
+          description: "Throttling or OOM risk on expensive, scarce hardware."
+      - alert: LlmTtftHigh
+        expr: |
+          histogram_quantile(0.95, sum by (le, model) (rate(llm_ttft_seconds_bucket[5m]))) > 2
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "LLM time-to-first-token p95 >2s for {{ $labels.model }}"
+          description: "Dominant driver of perceived speed in streaming UIs."
+      - alert: ModelDriftDetected
+        expr: model_drift_score > 0.3
+        for: 1h
+        labels: { severity: ticket }
+        annotations:
+          summary: "Output drift on {{ $labels.model }}"
+          description: "Retraining signal — accuracy degrades silently with no error."
+
+  # ---- 18) Backup / DR -------------------------------------------------------
+  - name: backup-dr
+    rules:
+      - alert: BackupFailed
+        expr: increase(backup_runs_total{status="failed"}[6h]) > 0
+        for: 0m
+        labels: { severity: page }
+        annotations:
+          summary: "Backup failed for {{ $labels.target }}"
+          description: "Recovery position degrades by the hour without a recent backup."
+      - alert: RpoExceeded
+        expr: time() - backup_last_success_timestamp_seconds > backup_rpo_seconds
+        for: 0m
+        labels: { severity: page }
+        annotations:
+          summary: "RPO exceeded for {{ $labels.target }}"
+          description: "Last good backup is older than the recovery-point objective."
+      - alert: DrReplicationDegraded
+        expr: dr_replication_healthy == 0
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "DR replication degraded for {{ $labels.target }}"
+          description: "Disaster-recovery target is falling out of sync."
+      - alert: RestoreTestFailed
+        expr: increase(restore_test_runs_total{status="failed"}[24h]) > 0
+        for: 0m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Restore test failed for {{ $labels.target }}"
+          description: "An untested backup is, statistically, not a backup."
+
+  # ---- 19) Multi-tenancy & cloud quotas --------------------------------------
+  - name: multi-tenancy-quota
+    rules:
+      - alert: TenantSloBurn
+        expr: |
+          sum by (tenant) (rate(http_requests_total{status_code=~"5.."}[5m]))
+            / clamp_min(sum by (tenant) (rate(http_requests_total[5m])), 1) > (14.4 * 0.001)
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "Per-tenant SLO burn for {{ $labels.tenant }}"
+          description: "Fleet average can look fine while one customer is down."
+      - alert: NoisyNeighbor
+        expr: max by (tenant) (tenant_resource_consumption_ratio) > 0.5
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Tenant {{ $labels.tenant }} consuming >50% of shared capacity"
+          description: "Isolation risk — one tenant's load becomes everyone's problem."
+      - alert: CloudQuotaNearLimit
+        expr: cloud_quota_used / cloud_quota_limit > 0.8
+        for: 15m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Cloud quota {{ $labels.quota }} >80% used"
+          description: "Request an increase early — approvals take time, and hitting it fails hard."
+      - alert: QuotaThrottleEvents
+        expr: rate(cloud_quota_throttle_events_total[5m]) > 0
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "Hitting a hard cloud limit ({{ $labels.quota }})"
+          description: "Actively blocked — looks like a mysterious intermittent failure."
+
+  # ---- 20) Compliance & telemetry-pipeline health ----------------------------
+  - name: compliance-telemetry
+    rules:
+      - alert: DataResidencyViolation
+        expr: data_residency_violations > 0
+        for: 0m
+        labels: { severity: page }
+        annotations:
+          summary: "Data residency violation detected"
+          description: "Data left an allowed region — a regulatory breach."
+      - alert: EncryptionCoverageGap
+        expr: resources_unencrypted_total > 0
+        for: 30m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Unencrypted resource(s) detected"
+          description: "Close the gap before an auditor finds it."
+      - alert: MetricCardinalityHigh
+        expr: prometheus_tsdb_head_series > 2000000
+        for: 30m
+        labels: { severity: ticket }
+        annotations:
+          summary: "TSDB active series very high"
+          description: "Cardinality explosion (user/request-ID labels?) melts the TSDB and spikes cost. Tune the threshold to your capacity."
+      - alert: TelemetryDropped
+        expr: rate(otelcol_processor_dropped_spans[5m]) + rate(otelcol_exporter_send_failed_spans[5m]) > 0
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Telemetry being dropped by the collector"
+          description: "Coverage gaps mean you're flying partially blind."
+
+  # ---- 21) North-south edge: gateway, LB, network, DNS, CDN, mesh ------------
+  - name: edge-and-network
+    rules:
+      - alert: GatewayUpstreamErrors
+        expr: rate(gateway_upstream_connect_errors_total[5m]) > 0
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "API gateway can't reach backends"
+          description: "Backend unreachable (down, partitioned, or overloaded)."
+      - alert: RateLimitThrottlingSustained
+        expr: rate(gateway_rate_limited_total[5m]) > 0
+        for: 15m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Sustained rate-limit rejections at the gateway"
+          description: "Under-provisioned limit or abuse — either way users are turned away."
+      - alert: LoadBalancerHealthyHostsLow
+        expr: lb_healthy_host_count < lb_min_healthy_host_count
+        for: 2m
+        labels: { severity: page }
+        annotations:
+          summary: "Healthy backends below minimum behind {{ $labels.lb }}"
+          description: "Capacity-to-serve at risk."
+      - alert: LoadBalancerRejectedConnections
+        expr: rate(lb_rejected_connections_total[5m]) > 0
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "Load balancer rejecting connections on {{ $labels.lb }}"
+          description: "Every rejection is a user turned away, invisible to backend error rates."
+      - alert: TcpRetransmitsHigh
+        expr: rate(node_netstat_Tcp_RetransSegs[5m]) / clamp_min(rate(node_netstat_Tcp_OutSegs[5m]), 1) > 0.02
+        for: 15m
+        labels: { severity: ticket }
+        annotations:
+          summary: "TCP retransmits >2% on {{ $labels.instance }}"
+          description: "Congested or lossy path; a common hidden latency source."
+      - alert: DnsResolutionErrors
+        expr: rate(dns_query_errors_total[5m]) > 0
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "DNS resolution errors on {{ $labels.instance }}"
+          description: "Resolver/upstream/config problem; breaks connectivity wholesale."
+      - alert: CdnOriginErrors
+        expr: |
+          sum(rate(cdn_origin_responses_total{status=~"5.."}[5m]))
+            / clamp_min(sum(rate(cdn_origin_responses_total[5m])), 1) > 0.05
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: "CDN origin 5xx >5%"
+          description: "Edge is healthy but what it's serving is broken."
+      - alert: CdnCacheHitRatioLow
+        expr: cdn_cache_hit_ratio < 0.8
+        for: 15m
+        labels: { severity: ticket }
+        annotations:
+          summary: "CDN cache-hit ratio <80%"
+          description: "Shifts latency, origin load, and egress cost back onto the origin."
+      - alert: MeshSuccessRateLow
+        expr: |
+          sum by (source, destination) (rate(mesh_requests_total{response_code!~"5.."}[5m]))
+            / clamp_min(sum by (source, destination) (rate(mesh_requests_total[5m])), 1) < 0.99
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: "Mesh success rate <99% for {{ $labels.source }}→{{ $labels.destination }}"
+          description: "Inter-service failures the client app may silently swallow."
+      - alert: MtlsHandshakeErrors
+        expr: rate(mesh_mtls_handshake_errors_total[5m]) > 0
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "mTLS handshake errors in the mesh"
+          description: "Cert-rotation gap or policy misconfig partitioning services."
+
+  # ---- 22) Real-time & notifications -----------------------------------------
+  - name: realtime-notifications
+    rules:
+      - alert: ConnectionChurnStorm
+        expr: rate(ws_disconnects_total[1m]) > 100
+        for: 2m
+        labels: { severity: ticket }
+        annotations:
+          summary: "WebSocket reconnect storm"
+          description: "Self-amplifying — all clients reconnecting at once can take the server down."
+      - alert: RealtimeMessagesDropped
+        expr: rate(ws_dropped_messages_total[5m]) > 0
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Real-time messages dropped (slow consumers)"
+          description: "Clients can't keep up and are silently missing data."
+      - alert: NotificationDeliveryCollapse
+        expr: |
+          sum(rate(notifications_delivered_total[10m]))
+            / clamp_min(sum(rate(notifications_sent_total[10m])), 1) < 0.9
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: "Notification delivery rate <90%"
+          description: "For OTPs/receipts this is a money-path outage."
+      - alert: NotificationComplaintRateHigh
+        expr: |
+          sum(rate(notifications_complaints_total[1h]))
+            / clamp_min(sum(rate(notifications_delivered_total[1h])), 1) > 0.001
+        for: 30m
+        labels: { severity: page }
+        annotations:
+          summary: "Spam-complaint rate above threshold"
+          description: "Sustained complaints get you throttled/blocklisted — killing ALL delivery."
+
+  # ---- 23) Container runtime & K8s control plane (gaps) ----------------------
+  - name: container-controlplane
+    rules:
+      - alert: ContainerCpuThrottling
+        expr: |
+          rate(container_cpu_cfs_throttled_periods_total[5m])
+            / clamp_min(rate(container_cpu_cfs_periods_total[5m]), 1) > 0.25
+        for: 15m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Container {{ $labels.pod }} CPU-throttled >25% of periods"
+          description: "Hidden latency cause — CPU limit set too low for the workload."
+      - alert: EtcdSlowFsync
+        expr: |
+          histogram_quantile(0.99, sum by (le) (rate(etcd_disk_wal_fsync_duration_seconds_bucket[5m]))) > 0.5
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: "etcd WAL fsync p99 >500ms"
+          description: "etcd is the cluster brain; slow fsyncs destabilize everything above."
+      - alert: EtcdDbSizeHigh
+        expr: etcd_mvcc_db_total_size_in_bytes / etcd_server_quota_backend_bytes > 0.8
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: "etcd DB >80% of quota"
+          description: "Hitting quota puts etcd (and the cluster) into a read-only freeze."
+      - alert: CoreDnsErrors
+        expr: rate(coredns_dns_responses_total{rcode="SERVFAIL"}[5m]) > 0
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: "CoreDNS SERVFAILs"
+          description: "In-cluster DNS failure breaks service discovery and therefore everything."
+      - alert: PendingPods
+        expr: sum(kube_pod_status_phase{phase="Pending"}) > 0
+        for: 15m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Pods stuck Pending"
+          description: "No capacity or unsatisfiable constraints (taints/affinity/resources)."
+      - alert: IngressControllerErrors
+        expr: |
+          sum(rate(nginx_ingress_controller_requests{status=~"5.."}[5m]))
+            / clamp_min(sum(rate(nginx_ingress_controller_requests[5m])), 1) > 0.05
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: "Ingress 5xx >5%"
+          description: "The cluster's north-south front door is failing."
+      - alert: HpaMaxedOut
+        expr: kube_horizontalpodautoscaler_status_current_replicas >= kube_horizontalpodautoscaler_spec_max_replicas
+        for: 15m
+        labels: { severity: ticket }
+        annotations:
+          summary: "HPA {{ $labels.horizontalpodautoscaler }} pinned at max replicas"
+          description: "Scaling ceiling too low for current load."
+
+  # ---- 24) Delivery / CI-CD (operational page) -------------------------------
+  - name: delivery
+    rules:
+      - alert: DeploymentFailed
+        expr: increase(deployment_results_total{result="failed"}[15m]) > 0
+        for: 0m
+        labels: { severity: page }
+        annotations:
+          summary: "Production deployment failed for {{ $labels.service }}"
+          description: "The change didn't land or is actively harming prod."
+      - alert: ChangeFailureRateHigh
+        expr: |
+          sum(increase(deployments_total{caused_incident="true"}[7d]))
+            / clamp_min(sum(increase(deployments_total[7d])), 1) > 0.15
+        for: 1h
+        labels: { severity: ticket }
+        annotations:
+          summary: "Change failure rate >15% (7d)"
+          description: "Deploy quality is slipping — deploys are getting riskier."

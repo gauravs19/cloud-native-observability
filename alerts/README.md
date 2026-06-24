@@ -4,16 +4,33 @@
 🔴 Page / 🟠 Ticket rows from [`../CATALOG.md`](../CATALOG.md). **Templates — adapt names and
 thresholds to your stack and SLOs.**
 
+**Coverage:** **96 alerts** (48 page + 48 ticket) + 4 recording rules across **25 groups** —
+covering essentially every Page/Ticket row in the catalog. The 🟢 *Watch* rows are intentionally
+**not** alerts (dashboard/diagnosis only); turning them into alerts is the noise the catalog warns against.
+
 ## What's inside
 
-| Group | Covers |
-|-------|--------|
+| Domain group(s) | Covers |
+|-----------------|--------|
 | `slo-recording` + `slo-burn-rate` | Multi-window, multi-burn-rate **error-budget** alerts (the gold standard for paging) |
-| `service-latency` | p99 latency vs SLO |
+| `service-latency`, `service-saturation` | p99 latency, connection-pool exhaustion, dependency errors |
 | `host-use` | CPU saturation, memory pressure, predictive disk-fill, network errors |
-| `kubernetes` | CrashLoop, replicas unavailable, NotReady node, OOMKill, API-server 5xx |
-| `service-saturation` | Connection-pool exhaustion, downstream dependency errors |
+| `kubernetes`, `container-controlplane` | CrashLoop, replicas, NotReady, OOMKill, CPU throttling, etcd fsync/quota, CoreDNS, ingress, pending pods, HPA, API-server 5xx |
+| `database-relational`, `database-nosql` | Replication lag, deadlocks, cache-hit, storage, conn-wait; 429 throttling, throughput, hot partition |
+| `cache`, `storage` | Hit-ratio, evictions, memory, replication; object-availability, throttling, disk IOPS |
+| `serverless` | Error rate, throttles, iterator age, near-timeout |
+| `search-engine` | Cluster red, unassigned shards, heap, threadpool rejections |
+| `security` | Auth-failure spike, credential stuffing, WAF, DDoS, secret-store throttling, egress anomaly, audit-log gap |
+| `cost-finops` | Daily-spend anomaly, budget burn |
+| `data-pipeline-quality` | Pipeline failure, freshness, row-count drop, schema drift, validation |
+| `ai-ml-llm` | Inference errors, provider 429, GPU, TTFT, drift |
+| `backup-dr` | Backup failure, RPO exceeded, DR replication, restore test |
+| `multi-tenancy-quota` | Per-tenant SLO burn, noisy neighbor, cloud quota, throttle events |
+| `compliance-telemetry` | Residency, encryption coverage, TSDB cardinality, dropped telemetry |
+| `edge-and-network` | Gateway upstream errors, rate-limit, LB health/rejects, retransmits, DNS, CDN origin, mesh success/mTLS |
+| `realtime-notifications` | Reconnect storms, dropped messages, delivery collapse, complaint rate |
 | `messaging` | Consumer lag, dead-letter growth |
+| `delivery` | Failed prod deploy, change-failure-rate |
 | `certs-and-heartbeats` | Cert expiry, batch dead-man's-switch, scrape target down |
 
 ## The burn-rate alerts (read this before tuning)
