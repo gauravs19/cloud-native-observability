@@ -22,7 +22,7 @@ See [Methods & their theory](#methods--their-theory) for what each means.
 - [Part B′ — Protocol & workload layers](#part-b--protocol--workload-specific-layers) — 26 gRPC · 27 GraphQL · 28 Real-time · 29 Search · 30 Vector DB · 31 Mobile · 32 Notifications · 33 Third-party
 - [Part C — Cross-cutting dimensions](#part-c--cross-cutting-dimensions) — 19 Security · 20 Cost · 21 Business · 22 Data quality · 23 AI/ML · 24 DORA · 25 Backup/DR
 - [Part C′ — Operational dimensions](#part-c--operational-dimensions) — 34 Alerting health · 35 Capacity · 36 Multi-tenancy · 37 Quotas · 38 Compliance · 39 Telemetry pipeline · 40 Sustainability
-- [Part D — Azure service map](#part-d--azure-service-map)
+- [Part D — Cloud service map (Azure · AWS · GCP)](#part-d--cloud-service-map-azure--aws--gcp)
 - [Part E — Operating the system](#part-e--operating-the-system)
 - [Anti-noise rules](#anti-noise-rules)
 - [References](#references)
@@ -737,104 +737,110 @@ Four complementary mental models tell you *what* to measure; each was invented t
 | `utilization_efficiency` | USE | 🟢 Watch | Useful work ÷ provisioned capacity. Watch — low efficiency is simultaneously wasted carbon and wasted spend. |
 | `carbon_aware_scheduling` | — | 🟢 Watch | Flexible work (batch, training) shifted to low-carbon windows/regions. Watch as a maturity indicator. |
 
-## Part D — Azure service map
+## Part D — Cloud Service Map (Azure · AWS · GCP)
 
-**Context.** A concrete mapping of the generic layers above onto Azure Monitor metric names, by service category. Thresholds align with **Azure Monitor Baseline Alerts (AMBA)** — Microsoft's curated, deployable set of recommended alerts. APM ≈ **Application Insights** across all app tiers.
+**Context.** The generic layers above don't care which cloud you run on, but the *product names* do. This maps each observability role to its **Azure, AWS, and GCP** service, with a vendor-neutral **What to watch** column — the signal that matters regardless of product. Specific provider metric names live in the provider catalogs (linked at the end); the durable part is the rightmost column. APM ≈ Azure Application Insights / AWS X-Ray + CloudWatch / GCP Cloud Trace + Monitoring.
 
-> 🌐 **Multi-cloud?** See [`docs/cloud-provider-map.md`](./docs/cloud-provider-map.md) for the same roles mapped across **Azure / AWS / GCP** side by side.
+Legend: 🔴 Page · 🟠 Ticket · 🟢 Watch.
 
 ### Compute
-| Service | Key metrics | Alert focus |
-|---------|-------------|-------------|
-| **Virtual Machines** | `Percentage CPU`, `Available Memory Bytes`, `OS/Data Disk IOPS Consumed %`, `Network In/Out` | 🟠 CPU>80%; 🔴 low memory; 🟠 disk IOPS>95% |
-| **VM Scale Sets** | above + instance count vs capacity | 🟠 pinned at max instances |
-| **App Service / Web Apps** | `Http5xx`, `HttpResponseTime`, `CpuPercentage`, `MemoryPercentage`, `HttpQueueLength` | 🔴 5xx SLO burn; 🟠 CPU/mem>80%; 🟠 rising queue |
-| **Azure Functions** | `FunctionExecutionCount`, `FunctionExecutionUnits`, errors, `Http5xx` | 🟠 failure ratio; 🔴 5xx |
-| **Container Apps** | replica count, CPU/mem usage, `Requests`, `4xx/5xx`, replica restarts | 🔴 5xx; 🟠 scale ceiling |
-| **Container Instances** | `CpuUsage`, `MemoryUsage`, restart count | 🟠 >80% |
-| **AKS** | `node_cpu/memory_working_set_percentage`, `kube_pod_status_ready`, restarts, `node_status_condition`, apiserver/etcd metrics | 🔴 NotReady / CrashLoop; 🟠 >80–90% |
-| **Batch** | active/failed tasks, node states, job completion | 🔴 task failures |
-| **Service Fabric** | health states, partition health | 🔴 unhealthy partitions |
+| Role | Azure | AWS | GCP | What to watch |
+|------|-------|-----|-----|---------------|
+| VM / IaaS | Virtual Machines | EC2 | Compute Engine | 🟠 CPU util + saturation · 🔴 memory available · 🟠 disk IOPS-consumed % · network in/out |
+| Autoscaling group | VM Scale Sets | Auto Scaling Groups | Managed Instance Groups | 🟠 desired vs in-service instances · scaling failures · pinned-at-max |
+| PaaS web app | App Service | Elastic Beanstalk / App Runner | App Engine / Cloud Run | 🔴 5xx (SLO burn) · 🟠 CPU/mem % · 🟠 request-queue length · p95 latency |
+| Serverless functions | Functions | Lambda | Cloud Functions | 🔴 error rate · 🔴 throttles/concurrency · 🟠 duration vs timeout · cold-start rate · DLQ |
+| Managed Kubernetes | AKS | EKS | GKE | 🔴 pod ready<desired / CrashLoop · 🔴 node NotReady · 🟠 CPU/mem working-set · etcd/API-server health |
+| Serverless containers | Container Apps | ECS Fargate / App Runner | Cloud Run | 🔴 5xx · 🟠 scale ceiling · replica restarts |
+| Batch | Batch | AWS Batch | Cloud Batch / Dataflow | 🔴 task/job failures · 🟠 queue wait · last-success age |
 
 ### Networking
-| Service | Key metrics | Alert focus |
-|---------|-------------|-------------|
-| **Load Balancer** | `DipAvailability`, `SnatConnectionCount`, `SYNCount`, `ByteCount` | 🔴 SNAT exhaustion; 🔴 backend availability |
-| **Application Gateway** | `UnhealthyHostCount`, `FailedRequests`, `ResponseStatus` (5xx), `BackendResponseStatus`, `CapacityUnits` | 🔴 healthy<min; 🔴 5xx |
-| **Front Door / CDN** | `BackendResponseStatus` 5xx, `TotalLatency`, `OriginHealthPercentage`, `RequestCount`, cache hit | 🔴 5xx; 🟠 origin health drop |
-| **Traffic Manager** | endpoint status, probe health, query volume | 🔴 endpoint down |
-| **VPN Gateway** | `TunnelAverageBandwidth`, `TunnelEgress/IngressPackets`, tunnel state | 🔴 tunnel down; 🟠 bandwidth saturation |
-| **ExpressRoute** | `BitsInPerSecond/Out`, `ArpAvailability`, `BgpAvailability` | 🔴 BGP/peering down |
-| **Azure Firewall** | `Throughput`, SNAT port utilization, `FirewallHealth`, rule hits | 🔴 SNAT exhaustion; 🟠 health |
-| **DDoS Protection** | `UnderDDoSAttack`, dropped packets/bytes | 🔴 attack active |
-| **NAT Gateway** | `SNATConnectionCount`, port utilization, dropped packets | 🔴 port exhaustion |
-| **Private Link / Endpoint** | `PEBytesIn/Out`, data processed | 🟢 watch |
-| **Azure DNS** | query volume, record-set count | 🟢 watch |
+| Role | Azure | AWS | GCP | What to watch |
+|------|-------|-----|-----|---------------|
+| L4 load balancer | Load Balancer | NLB | Network/Passthrough LB | 🔴 healthy-host count · 🔴 SNAT/port exhaustion · byte/SYN counts |
+| L7 load balancer | Application Gateway | ALB | HTTP(S) LB | 🔴 unhealthy hosts · 🔴 backend 5xx · target latency · surge queue |
+| CDN / edge | Front Door / Azure CDN | CloudFront | Cloud CDN / Media CDN | 🟠 cache-hit ratio · 🔴 origin 5xx · origin latency · egress bytes |
+| Global DNS routing | Traffic Manager | Route 53 | Cloud DNS + GCLB | 🔴 endpoint/health-check status · query volume |
+| Site-to-site VPN | VPN Gateway | Site-to-Site VPN | Cloud VPN | 🔴 tunnel state · 🟠 tunnel bandwidth · ingress/egress packets |
+| Dedicated interconnect | ExpressRoute | Direct Connect | Cloud Interconnect | 🔴 BGP/peering availability · bits in/out · ARP/light levels |
+| Cloud firewall | Azure Firewall | Network Firewall | Cloud NGFW | 🔴 SNAT exhaustion · throughput · rule hits · health |
+| DDoS protection | DDoS Protection | Shield | Cloud Armor | 🔴 under-attack flag · dropped packets/bytes |
+| Outbound NAT | NAT Gateway | NAT Gateway | Cloud NAT | 🔴 SNAT port exhaustion · dropped packets · allocation errors |
+| Private connectivity | Private Link / Endpoint | PrivateLink (VPC Endpoint) | Private Service Connect | 🟢 bytes processed · connection state |
 
 ### Data — Relational
-| Service | Key metrics | Alert focus |
-|---------|-------------|-------------|
-| **Azure SQL Database** | `cpu_percent`, `dtu_consumption_percent`, `storage_percent`, `connection_failed`, `deadlock`, `log_write_percent` | 🟠 CPU/DTU>80%; 🔴 storage; 🟠 deadlocks |
-| **SQL Managed Instance** | CPU, storage, IO, failed connections | as above |
-| **PostgreSQL Flexible** | `cpu_percent`, `memory_percent`, `storage_percent`, `active_connections`, `iops`, replication lag | 🟠 >80%; 🔴 storage; 🔴 replica lag |
-| **MySQL Flexible** | same family | as above |
+| Role | Azure | AWS | GCP | What to watch |
+|------|-------|-----|-----|---------------|
+| Managed relational | SQL Database | RDS / Aurora | Cloud SQL / AlloyDB | 🟠 CPU/DTU/ACU % · 🔴 storage % · 🟠 connections vs max · 🔴 replica lag · deadlocks · buffer-cache hit |
+| Distributed SQL | SQL Hyperscale | Aurora | Cloud Spanner | 🟠 CPU % · 🔴 storage · commit/lock latency · replica/leader lag |
 
 ### Data — NoSQL / Cache
-| Service | Key metrics | Alert focus |
-|---------|-------------|-------------|
-| **Cosmos DB** | `TotalRequestUnits`, `429 ThrottledRequests`, `ServerSideLatency`, `ProvisionedThroughput`, `NormalizedRUConsumption` | 🔴 429s; 🟠 normalized RU>80%; 🟠 P99 latency |
-| **Cache for Redis** | `ServerLoad`, `UsedMemoryPercentage`, `CacheHits/Misses`, `Evictions`, `ConnectedClients`, `CacheLatency` | 🟠 ServerLoad>80%, mem>85%; 🟠 evictions |
+| Role | Azure | AWS | GCP | What to watch |
+|------|-------|-----|-----|---------------|
+| Document / wide-column | Cosmos DB | DynamoDB | Firestore / Bigtable | 🔴 throttled (429) requests · 🟠 consumed vs provisioned RU/RCU/WCU · 🟠 hot-partition skew · P99 latency |
+| Managed cache | Cache for Redis | ElastiCache | Memorystore | 🟠 hit ratio · 🟠 evictions · 🟠 memory % · engine/server load · command latency |
 
 ### Storage
-| Service | Key metrics | Alert focus |
-|---------|-------------|-------------|
-| **Storage Account** (Blob/Queue/Table/File) | `Availability`, `SuccessE2ELatency`, `SuccessServerLatency`, `Transactions` (Throttling), `UsedCapacity`, `Egress` | 🔴 availability<SLA; 🟠 throttling; 🟢 latency drift |
-| **Managed Disks** | IOPS/throughput consumed %, queue depth | 🟠 >95% tier cap |
-| **Azure Files / NetApp** | latency, throughput, capacity | 🟠 capacity / latency |
+| Role | Azure | AWS | GCP | What to watch |
+|------|-------|-----|-----|---------------|
+| Object store | Blob Storage | S3 | Cloud Storage | 🔴 availability · 🟠 throttled requests (hot prefix) · E2E latency · 4xx/5xx · egress |
+| Block disk | Managed Disks | EBS | Persistent Disk / Hyperdisk | 🟠 IOPS/throughput consumed % (tier cap) · queue depth · await |
+| Managed file share | Azure Files / NetApp | EFS / FSx | Filestore | 🟠 capacity · throughput/burst credits · latency |
 
 ### Messaging & Integration
-| Service | Key metrics | Alert focus |
-|---------|-------------|-------------|
-| **Service Bus** | `ActiveMessages`, `DeadletteredMessages`, `ThrottledRequests`, `Size`, `ServerErrors` | 🔴 backlog growth; 🟠 DLQ / throttling |
-| **Event Hubs** | `IncomingMessages` vs `OutgoingMessages`, `ThrottledRequests`, `CaptureBacklog`, consumer lag | 🔴 egress lagging ingress; 🟠 throttling |
-| **Event Grid** | `PublishSuccess/Fail`, `DeliverySuccess/Fail`, `DeadLetteredCount`, delivery latency | 🟠 delivery failures / DLQ |
-| **Storage Queues** | message count, age | 🟠 backlog |
-| **API Management** | `Capacity`, `FailedRequests`, `Duration`, `UnauthorizedRequests`, backend latency | 🟠 Capacity>70%; 🔴 failures |
-| **Logic Apps** | `RunsFailed`, `RunLatency`, `ActionsFailed`, throttled runs | 🔴 workflow failures |
+| Role | Azure | AWS | GCP | What to watch |
+|------|-------|-----|-----|---------------|
+| Queue | Service Bus / Storage Queues | SQS | Pub/Sub (pull) | 🔴 backlog growth · 🟠 oldest-message age · DLQ count · throttling |
+| Event streaming | Event Hubs | Kinesis / MSK | Pub/Sub / Managed Kafka | 🔴 consumer lag (egress vs ingress / iterator age) · under-replicated/offline partitions · throttling |
+| Event routing | Event Grid | EventBridge | Eventarc | 🟠 delivery failures · DLQ count · delivery latency |
+| API gateway | API Management | API Gateway | API Gateway / Apigee | 🟠 capacity/utilization · 🔴 5xx · 4xx/unauthorized · backend latency |
+| Workflow / orchestration | Logic Apps | Step Functions | Workflows | 🔴 run/execution failures · run latency · throttled executions |
 
 ### Analytics / Streaming / Data
-| Service | Key metrics | Alert focus |
-|---------|-------------|-------------|
-| **Stream Analytics** | `SU% Utilization`, `Watermark Delay`, `InputEventsBacklog`, `RuntimeErrors`, dropped events | 🔴 watermark delay / backlog; 🟠 SU>80% |
-| **Data Factory / Synapse Pipelines** | `Failed Runs`, `Run Duration`, integration-runtime CPU/queue | 🔴 failed runs; 🟠 IR saturation |
-| **Synapse Dedicated SQL Pool** | DWU usage, queued queries, tempdb, cache hit | 🟠 DWU>80%; 🟠 queueing |
-| **Databricks** | cluster CPU/mem, job failures, spill, queue | 🔴 job failures |
-| **Data Explorer (ADX)** | ingestion latency/failures, query duration, cache utilization, CPU | 🟠 ingestion lag; 🟠 query latency |
+| Role | Azure | AWS | GCP | What to watch |
+|------|-------|-----|-----|---------------|
+| Stream processing | Stream Analytics | Kinesis Data Analytics / Managed Flink | Dataflow | 🔴 watermark/event-time lag · input backlog · 🟠 SU/worker utilization · runtime errors |
+| Batch ETL / pipelines | Data Factory | Glue / Step Functions | Dataflow / Composer | 🔴 failed runs · run duration · integration-runtime/worker saturation |
+| Data warehouse | Synapse (Dedicated Pool) | Redshift | BigQuery | 🟠 slot/DWU utilization · queued queries · spill · cache hit (BigQuery: slot ms, bytes scanned) |
+| Big-data / Spark | Databricks / HDInsight | EMR | Dataproc | 🔴 job failures · executor CPU/mem · shuffle spill · queue |
+| Real-time analytics DB | Data Explorer (ADX) | OpenSearch Service | BigQuery (BI Engine) | 🟠 ingestion latency/failures · query duration · cache utilization |
 
-### AI
-| Service | Key metrics | Alert focus |
-|---------|-------------|-------------|
-| **Azure OpenAI** | `ProcessedPromptTokens`, `GeneratedTokens`, `429` throttling, latency, `ProvisionedUtilization` (PTU) | 🟠 429s; 🟠 PTU>80%; 🟠 latency |
-| **Azure ML** | endpoint request latency/errors, CPU/GPU utilization, deployment health | 🔴 endpoint errors; 🟠 GPU>90% |
-| **AI / Cognitive Services** | call volume, `4xx/429`, latency | 🟠 throttling |
+### AI / ML
+| Role | Azure | AWS | GCP | What to watch |
+|------|-------|-----|-----|---------------|
+| Managed LLM API | Azure OpenAI | Bedrock | Vertex AI (Gemini) | 🟠 token usage · 🟠 429 throttling · latency/TTFT · provisioned-capacity (PTU) utilization |
+| ML model serving | Azure ML Endpoints | SageMaker Endpoints | Vertex AI Endpoints | 🔴 endpoint error rate · latency · 🟠 GPU/CPU utilization · deployment health |
+| Cognitive / AI services | AI Services | Rekognition / Comprehend / etc. | Cloud Vision / NLP / etc. | 🟠 4xx/429 · call volume · latency |
 
 ### Identity & Security
-| Service | Key metrics | Alert focus |
-|---------|-------------|-------------|
-| **Entra ID (Azure AD)** | sign-in success/failure, risky sign-ins, conditional-access blocks, MFA failures | 🔴 failure spike (attack); 🟠 risky sign-ins |
-| **Key Vault** | `ServiceApiResult` (2xx/4xx/5xx), `ServiceApiLatency`, `429` throttling, saturation | 🟠 throttling breaks secret/cert fetch |
-| **Defender for Cloud** | secure score, recommendations, new alerts by severity | 🟠 new high/critical |
-| **Microsoft Sentinel** | incident count, ingestion volume/delay, analytics-rule health | 🔴 ingestion gap (blind spot) |
-| **WAF** (App Gateway / Front Door) | blocked requests, rule matches by category | 🟠 attack-pattern spike |
+| Role | Azure | AWS | GCP | What to watch |
+|------|-------|-----|-----|---------------|
+| Identity provider | Entra ID | IAM / Cognito | Cloud Identity / IAM | 🔴 sign-in failure spike · risky sign-ins · conditional-access/MFA failures |
+| Secrets / key vault | Key Vault | Secrets Manager / KMS | Secret Manager / Cloud KMS | 🟠 API 4xx/5xx · 🟠 429 throttling · latency |
+| Posture / CSPM | Defender for Cloud | Security Hub / GuardDuty | Security Command Center | 🟠 new high/critical findings · secure-score drop |
+| SIEM | Microsoft Sentinel | OpenSearch / partners | Chronicle | 🔴 ingestion gap (blind spot) · incident count · rule health |
+| WAF | App Gateway / Front Door WAF | AWS WAF | Cloud Armor | 🟠 blocked requests · rule matches by category |
 
-### Platform / Ops
-| Service | Key metrics | Alert focus |
-|---------|-------------|-------------|
-| **Application Insights** | `requests/duration`, `requests/failed`, `dependencies/duration & failed`, `exceptions`, `availabilityResults` | 🔴 response-time & failure-rate SLO burn — the APM layer |
-| **Log Analytics** | ingestion volume/latency, daily-cap hit, query failures | 🟠 cap hit = dropped logs |
-| **Azure Monitor / Alerts** | alert-rule firing health, action-group delivery failures | 🔴 alerting pipeline broken |
-| **Resource Health / Service Health** | platform-reported resource & region status | 🔴 Azure-side outage affecting you |
-| **Cost Management** | actual vs budget, forecast, anomalies | 🔴 spend anomaly; 🟠 budget burn |
+### Platform / Ops (the observability plane)
+| Role | Azure | AWS | GCP | What to watch |
+|------|-------|-----|-----|---------------|
+| APM / tracing | Application Insights | X-Ray + CloudWatch | Cloud Trace + Monitoring | 🔴 request failure-rate & response-time SLO burn · dependency RED · exceptions |
+| Logs | Log Analytics | CloudWatch Logs | Cloud Logging | 🟠 ingestion volume/latency · daily-cap/quota hit · dropped logs |
+| Metrics / alerting | Azure Monitor + AMBA | CloudWatch Alarms | Cloud Monitoring + Alerting | 🔴 alert-pipeline health · notification delivery failures |
+| Platform status | Resource / Service Health | Health Dashboard / Health API | Service Health / Status | 🔴 provider-side outage affecting you |
+| Cost | Cost Management | Cost Explorer / Budgets | Billing / Budgets | 🔴 daily-spend anomaly · 🟠 budget burn |
+
+### Provider metric catalogs (master lists)
+- **Azure Monitor — supported metrics index:** <https://learn.microsoft.com/azure/azure-monitor/reference/supported-metrics/metrics-index>
+- **AWS CloudWatch — metrics & dimensions by service:** <https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CW_Support_For_AWS.html>
+- **GCP Cloud Monitoring — metrics list:** <https://cloud.google.com/monitoring/api/metrics_gcp>
+
+### Recommended-alert baselines per provider
+- **Azure:** Azure Monitor Baseline Alerts (AMBA) — <https://azure.github.io/azure-monitor-baseline-alerts/>
+- **AWS:** CloudWatch recommended alarms — <https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Best_Practice_Recommended_Alarms_AWS_Services.html>
+- **GCP:** Cloud Monitoring alerting policies — <https://cloud.google.com/monitoring/alerts>
+
+> Product names change; the **What to watch** column is the durable part. Map it to your provider's current metric names from the catalogs above.
 
 ## Part E — Operating the system
 

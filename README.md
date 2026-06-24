@@ -15,13 +15,12 @@ map. Metric names follow OpenTelemetry / Prometheus conventions.
 
 | Path | What it is |
 |------|------------|
-| [`CATALOG.md`](./CATALOG.md) | The master catalog — 40 sections, every metric as `Metric · Method · Action · description` |
-| [`docs/cloud-provider-map.md`](./docs/cloud-provider-map.md) | The same roles mapped across **Azure / AWS / GCP**, with the vendor-neutral signal to watch |
+| [`CATALOG.md`](./CATALOG.md) | The master catalog — 40 sections, every metric as `Metric · Method · Action · description`. **Part D** maps every role across **Azure / AWS / GCP**. |
 | [`dashboards/`](./dashboards/) | Importable **Grafana** dashboards as code — Golden Signals, RED-by-endpoint, USE-by-resource |
 | [`alerts/`](./alerts/) | Generic **Prometheus** alert rules — multi-window burn-rate SLO alerts + USE/RED/K8s/messaging/cert rules |
 
-Use the catalog to decide *what* to measure, the provider map to find the *metric name* on
-your cloud, and the dashboards + alerts as a *starting implementation*.
+Use the catalog to decide *what* to measure, Part D's cloud map to find the *service* on your
+cloud (Azure / AWS / GCP), and the dashboards + alerts as a *starting implementation*.
 
 ---
 
@@ -49,7 +48,7 @@ The **Method** says why the metric exists; the **Action** says what an alert sho
 5. **Part B′** — 8 protocol/workload layers (gRPC, GraphQL, real-time, search, vector DB, mobile, …)
 6. **Part C** — 7 cross-cutting dimensions (security, cost, business, data quality, AI/LLM, DORA, DR)
 7. **Part C′** — 7 operational dimensions (alerting health, capacity, multi-tenancy, quotas, compliance, …)
-8. **Part D** — Azure service map (~60 services, by category)
+8. **Part D** — cloud service map: every role across **Azure / AWS / GCP**, by category
 9. **Part E** — operating the system (SLI/SLO/SLA, thresholds, severity, alert lifecycle)
 
 ## Key references
