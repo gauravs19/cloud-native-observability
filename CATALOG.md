@@ -19,8 +19,8 @@ See [Methods & their theory](#methods--their-theory) for what each means.
 - [Glossary & abbreviations](#glossary--abbreviations)
 - [Part A — The signal types](#part-a--the-signal-types)
 - [Part B — Metrics by layer](#part-b--metrics-by-layer) — 01 Frontend · 02 API Gateway · 03 Service · 04 Mesh · 04a Tracing/APM · 05 Network · 06 Load Balancer · 07 DNS/TLS · 08 CDN · 09 DB-Relational · 10 DB-NoSQL · 11 Cache · 12 Messaging · 13 Storage · 14 Host · 15 Container · 16 Kubernetes · 17 Serverless · 18 Batch
-- [Part B′ — Protocol & workload layers](#part-b--protocol--workload-specific-layers) — 26 gRPC · 27 GraphQL · 28 Real-time · 29 Search · 30 Vector DB · 31 Mobile · 32 Notifications · 33 Third-party
-- [Part C — Cross-cutting dimensions](#part-c--cross-cutting-dimensions) — 19 Security · 20 Cost · 21 Business · 22 Data quality · 23 AI/ML · 24 DORA · 25 Backup/DR
+- [Part B′ — Protocol & workload layers](#part-b--protocol--workload-specific-layers) — 19 gRPC · 20 GraphQL · 21 Real-time · 22 Search · 23 Vector DB · 24 Mobile · 25 Notifications · 26 Third-party
+- [Part C — Cross-cutting dimensions](#part-c--cross-cutting-dimensions) — 27 Security · 28 Cost · 29 Business · 30 Data quality · 31 AI/ML · 32 DORA · 33 Backup/DR
 - [Part C′ — Operational dimensions](#part-c--operational-dimensions) — 34 Alerting health · 35 Capacity · 36 Multi-tenancy · 37 Quotas · 38 Compliance · 39 Telemetry pipeline · 40 Sustainability
 - [Part D — Cloud service map (Azure · AWS · GCP)](#part-d--cloud-service-map-azure--aws--gcp)
 - [Part E — Operating the system](#part-e--operating-the-system)
@@ -229,8 +229,8 @@ Two corollaries: page on **symptoms, not causes** (high CPU is a cause, and poss
 | **Continuous profiling** | CPU/heap/lock flame data | "Why is it slow/expensive at the code level?" | On-CPU, allocation, lock contention, thread/goroutine counts. |
 | **RUM** | Browser/mobile field telemetry | "What do real users experience?" | Core Web Vitals, JS errors, page loads. See §01. |
 | **Synthetic / availability** | Scripted probes from outside | "Is it up & correct from the user's vantage?" | Uptime %, probe latency, multi-step journey success, cert checks. |
-| **Security signals** | Auth, threat, posture telemetry | "Are we attacked / misconfigured?" | See §19. |
-| **Cost telemetry** | Spend & unit economics | "What does this cost per unit of value?" | See §20. |
+| **Security signals** | Auth, threat, posture telemetry | "Are we attacked / misconfigured?" | See §27. |
+| **Cost telemetry** | Spend & unit economics | "What does this cost per unit of value?" | See §28. |
 | **SLIs / SLOs** | Derived reliability indicators | "Are we meeting our promise?" | Built *from* the above; error budget & burn rate drive paging. |
 
 ---
@@ -249,7 +249,7 @@ flowchart TB
   SVC --> DB["09–10 · Database"]
   SVC --> CACHE["11 · Cache"]
   SVC --> MQ["12 · Messaging"]
-  SVC --> EXT["33 · Third-party APIs"]
+  SVC --> EXT["26 · Third-party APIs"]
   SVC --> INFRA["runs on → 14 Host · 15 Container · 16 Kubernetes"]
   classDef edge fill:#0d7c87,stroke:#0d7c87,color:#ffffff;
   classDef plain fill:#ffffff,stroke:#5c6f7c,color:#16242f;
@@ -549,7 +549,7 @@ flowchart TB
 
 **Context.** Part B assumes an HTTP request/response shape. Many real workloads don't fit it — they speak a different protocol (gRPC, GraphQL, WebSocket) or *are* a specialized system (search, vector DB, mobile client, message sender). Each needs metrics tailored to *its* failure modes.
 
-### 26 · gRPC / RPC
+### 19 · gRPC / RPC
 **Context.** gRPC carries errors in a *status code* (`UNAVAILABLE`, `DEADLINE_EXCEEDED`), not HTTP 5xx, and supports long-lived streams — so RED is sliced by `grpc_code` and augmented with stream counts that have no HTTP analogue.
 
 | Metric | Method | Action | Detailed description |
@@ -559,7 +559,7 @@ flowchart TB
 | `grpc_stream_messages` | RED | 🟢 Watch | Messages per second on streams. Watch throughput on streaming RPCs. |
 | `active_streams` | USE | 🟢 Watch | Open server/bidirectional streams. Watch for leaks and connection saturation. |
 
-### 27 · GraphQL
+### 20 · GraphQL
 **Context.** A single GraphQL endpoint hides many operations, so per-*field* resolver latency and per-*operation* error rates matter more than endpoint-level RED. Complexity limits and N+1 detection guard against expensive or abusive queries.
 
 | Metric | Method | Action | Detailed description |
@@ -570,7 +570,7 @@ flowchart TB
 | `n_plus_1_detected` | USE | 🟠 Ticket | Resolver fan-out to backends. Ticket — indicates a missing dataloader/batch, the classic GraphQL performance trap. |
 | `persisted_query_hit_ratio` | USE | 🟢 Watch | Use of allow-listed queries. Watch — low ratios reduce caching and increase attack surface. |
 
-### 28 · Real-time (WebSocket / SSE / MQTT)
+### 21 · Real-time (WebSocket / SSE / MQTT)
 **Context.** Persistent-connection protocols are measured by connection *lifecycle*, not request count: churn, backpressure, and dropped messages are the failure modes. A reconnect storm is self-amplifying — every dropped client reconnects at once.
 
 | Metric | Method | Action | Detailed description |
@@ -581,7 +581,7 @@ flowchart TB
 | `send_latency` / `ack_latency` | RED | 🟠 Ticket | Delivery time to clients. Ticket against the real-time SLO — the whole point of these protocols is timeliness. |
 | `dropped_messages` / `backpressure` | GOLD | 🟠 Ticket | Messages dropped to slow consumers. Ticket — clients can't keep up and are silently missing data. |
 
-### 29 · Search Engine (Elasticsearch / OpenSearch / Solr)
+### 22 · Search Engine (Elasticsearch / OpenSearch / Solr)
 **Context.** Distributed search clusters express health as *shard state* — **unassigned shards** or a **red** cluster mean data is unavailable. JVM heap pressure and threadpool rejections precede a GC "death spiral."
 
 | Metric | Method | Action | Detailed description |
@@ -594,7 +594,7 @@ flowchart TB
 | `threadpool_rejections` (search/write) | USE | 🟠 Ticket | Work dropped when pools are full. Ticket — a direct saturation signal that requests are being shed. |
 | `disk_watermark` (low/high/flood) | USE | 🔴 Page | Disk-based shard relocation/block thresholds. Page at flood stage — indices go read-only, silently failing all writes. |
 
-### 30 · Vector / Embedding DB (RAG)
+### 23 · Vector / Embedding DB (RAG)
 **Context.** Vector stores (the retrieval half of **RAG**) trade exactness for speed via approximate nearest-neighbor (**ANN**) search, so **recall@k** (search quality) joins latency as a first-class signal. A fast index returning irrelevant results is a silent quality failure.
 
 | Metric | Method | Action | Detailed description |
@@ -605,7 +605,7 @@ flowchart TB
 | `ingestion_lag` | GOLD | 🟠 Ticket | Embedding write backlog. Ticket — a lagging index serves a stale knowledge base, so RAG answers go out of date. |
 | `shard/replica_health` | GOLD | 🔴 Page | Distributed-index status. Page on unhealthy shards — retrieval is degraded or unavailable. |
 
-### 31 · Mobile App
+### 24 · Mobile App
 **Context.** Mobile is a *field-telemetry* problem: you can't see the device, so crash-free rate, **ANR**, and cold-start time are your SLIs. They're scoped by release version because a bad build's impact rolls out gradually as users update.
 
 | Metric | Method | Action | Detailed description |
@@ -617,7 +617,7 @@ flowchart TB
 | `slow_frames` / `frozen_frames` (jank) | GOLD | 🟢 Watch | Rendering smoothness. Watch — dropped frames read as a cheap, sluggish UI even without errors. |
 | `app_version_adoption` | BIZ | 🟢 Watch | Uptake of the latest build. Watch — tells you whether a fix has actually reached users and whether a forced update is needed. |
 
-### 32 · Notification / Comms Delivery (email / SMS / push)
+### 25 · Notification / Comms Delivery (email / SMS / push)
 **Context.** Outbound comms have a delivery *funnel* (sent → delivered → opened) and a reputation risk: bounce and complaint rates protect your sender reputation, which once damaged throttles *all* delivery — not just the bad messages.
 
 | Metric | Method | Action | Detailed description |
@@ -630,7 +630,7 @@ flowchart TB
 | `queue_backlog` / `oldest_age` | GOLD | 🟠 Ticket | Undelivered backlog and its age. Ticket — bounds how late a time-sensitive message (OTP) will arrive. |
 | `open/click_rate` | BIZ | 🟢 Watch | Engagement. Watch as a content/deliverability health proxy. |
 
-### 33 · External / Third-party SaaS Dependencies
+### 26 · External / Third-party SaaS Dependencies
 **Context.** You inherit your dependencies' reliability but not their dashboards, so measure them *from your own vantage*: availability, latency, error rate, and quota consumed. Circuit-breaker state tells you when you've shifted into degraded mode.
 
 | Metric | Method | Action | Detailed description |
@@ -645,7 +645,7 @@ flowchart TB
 
 ## Part C — Cross-cutting dimensions
 
-### 19 · Security & Identity
+### 27 · Security & Identity
 **Context.** Security telemetry overlaps observability but answers *"are we under attack or misconfigured?"* Auth-failure spikes, WAF blocks, and unusual egress are detective signals; an **audit-log gap** is both a blind spot and a compliance breach, so it pages.
 
 | Metric | Method | Action | Detailed description |
@@ -663,7 +663,7 @@ flowchart TB
 | `unusual_data_egress` | GOLD | 🔴 Page | Anomalous outbound volume. Page — a classic data-exfiltration signature. |
 | `audit_log_gap` | GOLD | 🔴 Page | Audit-logging pipeline broken. Page — a blind spot that hides every other security signal, and itself a compliance failure. |
 
-### 20 · Cost / FinOps
+### 28 · Cost / FinOps
 **Context.** In the cloud, cost is a *real-time operational* signal: a daily-spend anomaly often means a leak, a runaway resource, or an attack before any infra alarm fires. **FinOps** reframes spend as engineering feedback — unit economics turn a finance number into something engineers can optimize.
 
 | Metric | Method | Action | Detailed description |
@@ -676,7 +676,7 @@ flowchart TB
 | `data_egress_cost` | USE | 🟢 Watch | Cross-region/internet transfer cost. Watch — a frequently-overlooked silent top-line cost. |
 | `orphaned_resources` | USE | 🟠 Ticket | Unattached disks, IPs, snapshots. Ticket — pure waste left behind by deletions, easy to reclaim. |
 
-### 21 · Business / Product KPIs
+### 29 · Business / Product KPIs
 **Context.** These are the ground truth of whether the system delivers value — and frequently the *earliest* outage signal, because a drop in successful transactions appears while every infra dashboard is still green. Instrument them with the rigor of latency.
 
 | Metric | Method | Action | Detailed description |
@@ -689,7 +689,7 @@ flowchart TB
 | `feature_adoption` (per flag) | BIZ | 🟢 Watch | Uptake of new features. Watch to validate launches and inform rollout decisions. |
 | `slo_compliance` (customer-facing) | GOLD | 🔴 Page | The promise kept this window. Page on error-budget burn — the reliability bridge between engineering and the business. |
 
-### 22 · Data Pipeline / ETL / Data Quality
+### 30 · Data Pipeline / ETL / Data Quality
 **Context.** For data systems, *"correct but late"* and *"on-time but wrong"* are both failures, so you monitor **freshness** (lag) and **quality** (row counts, nulls, schema drift) together. A silent row-count drop is the data world's 500 error.
 
 | Metric | Method | Action | Detailed description |
@@ -703,7 +703,7 @@ flowchart TB
 | `late/out-of-order_events` | GOLD | 🟢 Watch | Stream watermark issues. Watch — affects windowing correctness in stream processing. |
 | `backfill_progress` | USE | 🟢 Watch | Reprocessing completeness. Watch during recovery/migration to know when data is whole again. |
 
-### 23 · AI / ML / LLM Serving
+### 31 · AI / ML / LLM Serving
 **Context.** ML systems degrade in two ways code doesn't: *silently* (data/model **drift** erodes accuracy with no error) and *economically* (token cost). Serving adds TTFT, GPU saturation, and provider throttling; quality needs sampled evaluation because correctness isn't a status code.
 
 | Metric | Method | Action | Detailed description |
@@ -722,7 +722,7 @@ flowchart TB
 | `guardrail_violations` | RED | 🟠 Ticket | Safety/content-filter hits. Ticket — spikes indicate abuse, jailbreak attempts, or a broken filter. |
 | `hallucination/groundedness_score` | BIZ | 🟢 Watch | Sampled answer-quality eval. Watch — catches quality regressions that no latency or error metric can. |
 
-### 24 · CI/CD & Delivery (DORA)
+### 32 · CI/CD & Delivery (DORA)
 **Context.** The **Four Key Metrics** treat *delivery* as a system worth measuring. DORA research (*Accelerate*) found these four separate high- from low-performing organizations — speed and stability rise together, not as a trade-off. Pipeline RED is the operational layer beneath them.
 
 | Metric | Method | Action | Detailed description |
@@ -735,7 +735,7 @@ flowchart TB
 | `deployment_success_rate` | RED | 🔴 Page | Rollout outcomes. Page on a failed production rollout — the change didn't land or is actively harming prod. |
 | `rollback_count` | 4KM | 🟢 Watch | Reverted deploys. Watch as a quality signal complementary to CFR. |
 
-### 25 · Backup / DR / Resilience
+### 33 · Backup / DR / Resilience
 **Context.** Backups are worthless until restored, so the real signals are **RPO** (data you'd lose), **RTO** (recovery time), and *verified* restore success — not merely "the backup ran." An untested backup is, statistically, not a backup.
 
 | Metric | Method | Action | Detailed description |
