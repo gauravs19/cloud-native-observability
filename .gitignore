@@ -4,3 +4,6 @@ Thumbs.db
 *.swp
 .vscode/
 .idea/
+
+# Git Bash / Cygwin crash dumps (Windows)
+*.stackdump
