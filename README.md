@@ -22,6 +22,8 @@ map. Metric names follow OpenTelemetry / Prometheus conventions.
 Use the catalog to decide *what* to measure, Part D's cloud map to find the *service* on your
 cloud (Azure / AWS / GCP), and the dashboards + alerts as a *starting implementation*.
 
+> **Companion tool — [NFR Advisor](https://github.com/gauravs19/nfr-advisor):** decides *which* quality attributes (NFRs) a system needs and turns each into a measurable SLO — then maps it to the exact signals & alerts in this catalog. NFR Advisor answers *what to require*; this repo answers *what to observe to prove it*.
+
 ---
 
 ## How it's organized
@@ -129,6 +131,22 @@ How many metrics each category carries, split by **Method**. RED and USE dominat
 7. **Part C′** — 7 operational dimensions (alerting health, capacity, multi-tenancy, quotas, compliance, …)
 8. **Part D** — cloud service map: every role across **Azure / AWS / GCP**, by category
 9. **Part E** — operating the system (SLI/SLO/SLA, thresholds, severity, alert lifecycle)
+
+## Companion — NFR Advisor
+
+[**NFR Advisor**](https://github.com/gauravs19/nfr-advisor) ([live](https://gauravs19.github.io/nfr-advisor/)) is the front door to this catalog. From a system's context it ranks the applicable non-functional requirements, surfaces trade-offs, and turns each into a quantified SLO — then links every NFR to the signals & alerts here (RED/USE/GOLD method, page/ticket/watch action, and the matching Prometheus rule). Together they close the loop:
+
+```mermaid
+flowchart LR
+  subgraph A["NFR Advisor"]
+    N["Requirement<br/>+ SLO"]
+  end
+  subgraph B["This catalog"]
+    O["Signals + alerts<br/>RED · USE · GOLD"]
+  end
+  N -->|"what to require"| O
+  O -.->|"what to observe"| N
+```
 
 ## Key references
 
